@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>League Login</title>
+</head>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, msg in messages %}
+        <div style="color: {{ 'red' if category == 'error' else 'green' }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="POST">
+        <label>League Name:</label><br>
+        <input type="text" name="league_name" placeholder="Enter league name" title="League Name" required><br><br>
+
+        <label>League Password:</label><br>
+        <input type="password" name="league_password" placeholder="Enter league password" title="League Password" required><br><br>
+
+        <label>Admin Password (optional):</label><br>
+        <input type="password" name="admin_password" placeholder="Enter admin password (optional)" title="Admin Password (optional)" autocomplete="off"><br><br>
+
+        <button type="submit">Enter</button>
+    </form>
+</body>
+</html>

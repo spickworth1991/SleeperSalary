@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ league_name }} - Team Salaries</title>
+</head>
+<body>
+    <h1>{{ league_name }} - Team Salary Summary</h1>
+
+    {% for team in teams %}
+        <h2>User: {{ team.user_id }}</h2>
+        <p>Players on roster: {{ team.player_count }} | Matched: {{ team.matched_count }}</p>
+        <p>Total Cap Hit: {{ team.total_cap }}</p>
+
+        {% if team.unmatched_ids %}
+            <p style="color: red;">Unmatched Player IDs (not found in salary sheet):</p>
+            <ul>
+                {% for pid in team.unmatched_ids %}
+                    <li>{{ pid }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+            
+
+        <table border="1">
+            <tr>
+                <th>Player</th>
+                <th>Cap Hit</th>
+                <th>Position</th>
+                <th>Age</th>
+            </tr>
+            {% for p in team.players %}
+            <tr>
+                <td>{{ p["Player"] }}</td>
+                <td>{{ p["Cap Hit"] }}</td>
+                <td>{{ p["Pos"] }}</td>
+                <td>{{ p["Age"] }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        <hr>
+    {% endfor %}
+</body>
+</html>
