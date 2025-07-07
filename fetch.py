@@ -7,7 +7,6 @@ from googleapiclient.discovery import build
 import os
 from rapidfuzz import fuzz, process
 
-
 # -------------------- Config --------------------
 SERVICE_ACCOUNT_FILE = r'C:\Users\spick\OneDrive\Desktop\nfl_salary_tracker\config\nfl-stats-ff-00a13e9db7db.json'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -53,121 +52,20 @@ SPOTRAC_TEAMS = {
     # Add more if needed
 }
 
-
-# -------------------- Common Name Equivalents --------------------
-COMMON_NAME_EQUIVS = {
-    # Standard diminutives
-    "matt": "matthew", "matthew": "matthew",
-    "mike": "michael", "michael": "michael",
-    "nick": "nicholas", "nicky": "nicholas", "nicholas": "nicholas",
-    "chris": "christopher", "christopher": "christopher",
-    "dan": "daniel", "daniel": "daniel",
-    "joe": "joseph", "joey": "joseph", "joseph": "joseph",
-    "tom": "thomas", "thomas": "thomas",
-    "tony": "anthony", "anthony": "anthony",
-    "jim": "james", "jimmy": "james", "james": "james",
-    "bob": "robert", "bobby": "robert", "rob": "robert", "robert": "robert",
-    "alex": "alexander", "alexander": "alexander",
-    "zac": "zachary", "zach": "zachary", "zack": "zachary", "zachary": "zachary",
-    "nate": "nathan", "nathan": "nathan",
-    "will": "william", "bill": "william", "billy": "william", "william": "william",
-    "sam": "samuel", "samuel": "samuel",
-    "steve": "steven", "steven": "steven", "stephen": "steven",
-    "rick": "richard", "richard": "richard", "rich": "richard", "dick": "richard",
-    "ken": "kenneth", "kenny": "kenneth", "kenneth": "kenneth",
-    "rob": "robert", "robby": "robert",
-    "fred": "frederick", "frederick": "frederick",
-    "damon": "damon", "donnie": "donald", "donald": "donald",
-    "derrick": "derrick", "derrick": "derrick",
-    "cam": "cameron",
-    "camryn": "cameron",
-    "trenton": "trent",
-    "kam": "kamren",
-    "dee": "demarcus",       # You had "larry" but it's likely "demarcus"
-    "tyre": "tyreke",
-    "tyrone": "ty",
-    "tyrion": "ty",
-    "josh": "joshua",
-    "julius": "julian",       # if consistently used that way
-    "daxton": "dax",
-    "sam": "samuel",
-    "nick": "nicholas",
-    "chauncey": "cj",         # questionable—keep only if multiple uses
-    "pat": "patrick",
-    "tony": "anthony",
-    "gabe": "gabriel",
-    "isaiah": "isaac",        # if mismatch happens in real usage
-    "tedarrell": "tj",
-    "gabe": "gabriel",  
-    "jake": "jacob",  
-    "tony": "anthony",
-    "danny": "daniel",
-    "andrew": "andy" ,"andrew":"drew",  
-    "shaquill": "shaq",
-    "bryce":"brycen",
-    "dru": "andru",
-    "kyle":"kyler",
-    "tra":"travion",
-    "tim":"timothy",
-    
-
-}
-
-
-
-NICKNAME_OVERRIDES = {
-    "sean bunting": "Sean Murphy-Bunting",
-    "ahmad gardner": "sauce gardner",
-    "chauncey gardner-johnson": "cj gardner-johnson",
-    "foley fatukasi": "olakunle fatukasi",
-    "amaré barno": "Amare Barno",  
-    "ogbonnia okoronkwo": "ogbo okoronkwo",
-    "decobie durant": "cobie durant", 
-    "trenton brown": "trent brown",
-    "malcolm rodríguez": "malcolm rodriguez",
-    "julius brents": "juju brents",  
-    "audric estimé": "audric estime", 
-    "marquise brown": "hollywood brown",  
-    "christian roland-wallace":"chris roland-wallace",
-    "delmar glaze": "dj glaze",  
-    "david ebuka agoha": "david agoha",  
-    "john shenker": "john samuel shenker",  
-    "d'wayne eskridge": "dee eskridge",
-    "dontavian jackson": "lucky jackson",
-    "rezjohn wright": "rejzohn wright",  
-    "carlos basham jr.": "boogie basham",
-    "xavier newman-johnson": "xavier newman",
-    "tariq woolen": "riq woolen",
-    "joe tryon": "joe tryon-shoyinka",
-    "iosua opeta": "sua opeta",
-    "sebastian joseph": "sebastian joseph-day",
-    "nick westbrook": "nick westbrook-ikhine",
-    "johnny newton": "jer'zhan newton",
-    "jartavius martin": "quan martin",
-    "haggai chisom ndubuisi": "haggai ndubuisi",
-    "quez watkins": "quez watkins",
-    "frank gore": "frank gore",
-    "tyreek maddox-william":"tyreek maddox-williams",
-    "elerson g. smith":"elerson smith",
-    "john parker romo":"parker romo",
-    
-
-
-}
-
-
-
-
-
 COMMON_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
+    "Accept":
+    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
+
 
 # -------------------- Auth --------------------
 def get_service():
-    creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return build('sheets', 'v4', credentials=creds)
+
 
 # -------------------- Google Sheets --------------------
 def load_sleeper_api():
@@ -179,7 +77,7 @@ def load_sleeper_api():
     for player_id, info in data.items():
         # Skip if status is exactly 'inactive' (case-insensitive)
         #if str(info.get("status", "")).lower() == "inactive":
-            #continue
+        #continue
 
         rows.append({
             "player_id": player_id,
@@ -193,154 +91,8 @@ def load_sleeper_api():
 
 
 
-def write_to_new_sheet(df):
-    service = get_service()
-
-    if "Team" not in df.columns or "Section" not in df.columns or "Year" not in df.columns:
-        raise Exception("❌ Missing 'Team', 'Section', or 'Year' column in DataFrame.")
-
-    final_rows = []
-
-    years = sorted(df["Year"].dropna().unique())
-    for year in years:
-        year_df = df[df["Year"] == year]
-
-        final_rows.append([])  # Blank line before year
-        final_rows.append([f"{year}"])  # Year header row
-
-        teams = year_df["Team"].dropna().unique()
-        for team in teams:
-            team_df = year_df[year_df["Team"] == team]
-
-            for section in ["Active", "Practice Squad", "Injured Reserve", "Draft Pool", "PUP"]:
-                section_df = team_df[team_df["Section"] == section]
-                if section_df.empty:
-                    continue
-
-                final_rows.append([])  # Blank line before team section
-                title = f"{team}" if section == "Active" else f"{team} {section}"
-                final_rows.append([title])
-
-                player_col = "Player"
-                base_cols = [player_col, "Cap Hit", "Pos", "sleeper_name", "player_id", "Dead Cap", "Age", "Cap Hit PctLeague Cap"]
-                section_cols = [col for col in base_cols if col in section_df.columns]
-
-                final_rows.append(section_cols)
-                section_df = section_df.reset_index(drop=True)
-                final_rows += section_df[section_cols].fillna('').values.tolist()
-
-        # Handle Free Agents for this year
-        fa_df = year_df[year_df["Section"] == "Free Agent"]
-        if not fa_df.empty:
-            final_rows.append([])  # Blank line before FA
-            final_rows.append(["Free Agents"])
-            base_cols = ["Player", "AAV", "Pos", "sleeper_name", "player_id"]
-            section_cols = [col for col in base_cols if col in fa_df.columns]
-            final_rows.append(section_cols)
-            final_rows += fa_df[section_cols].fillna('').values.tolist()
-
-    # Sheet title
-    now = datetime.datetime.now()
-    title = f"{now.month}-{now.day}-{now.year % 100}-{now.hour}_{now.minute}"
-
-    # Create the new sheet
-    service.spreadsheets().batchUpdate(
-        spreadsheetId=SPREADSHEET_ID,
-        body={"requests": [{"addSheet": {"properties": {"title": title}}}]}
-    ).execute()
-
-    service.spreadsheets().values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{title}!A1",
-        body={"values": final_rows},
-        valueInputOption="USER_ENTERED"
-    ).execute()
-
-    print(f"✅ Sheet '{title}' created and formatted by year.")
-
-    # Apply highlighting to 'UNMATCHED'
-    sheet_metadata = service.spreadsheets().get(spreadsheetId=SPREADSHEET_ID).execute()
-    sheet_id = next(s['properties']['sheetId'] for s in sheet_metadata['sheets'] if s['properties']['title'] == title)
-
-    highlight_request = {
-        "requests": [
-            {
-                "addConditionalFormatRule": {
-                    "rule": {
-                        "ranges": [{"sheetId": sheet_id}],
-                        "booleanRule": {
-                            "condition": {
-                                "type": "TEXT_EQ",
-                                "values": [{"userEnteredValue": "UNMATCHED"}]
-                            },
-                            "format": {
-                                "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.6}
-                            }
-                        }
-                    },
-                    "index": 0
-                }
-            }
-        ]
-    }
-
-    service.spreadsheets().batchUpdate(
-        spreadsheetId=SPREADSHEET_ID,
-        body=highlight_request
-    ).execute()
-
-    print(f"✅ Highlighting applied to 'UNMATCHED' values.")
 
 
-
-
-
-# -------------------- Position Normalization --------------------
-def map_position(pos):
-    if not isinstance(pos, str):
-        return []
-    pos = pos.strip().upper()
-
-    mapping = {
-        'DL': ['DL', 'DE', 'DT','OLB'],
-        'DE': ['DL', 'DE', 'EDGE', 'OLB', 'DT','ILB'],  # EDGE is common in Sleeper
-        'DT': ['DL', 'DT', 'DE','OLB','G', 'FB'],
-
-        'LB': ['LB', 'ILB', 'OLB', 'MLB', 'DE','FB','DE/OLB', 'DT','FS','S'],
-        'ILB': ['LB', 'ILB', 'MLB', 'DB'],
-        'OLB': ['LB', 'OLB', 'EDGE'],
-
-        'CB': ['CB', 'DB','S','FS'],
-        'S': ['S', 'SS', 'FS', 'DB'],
-        'SS': ['S', 'SS'],
-        'FS': ['S', 'FS'],
-        'DB': ['CB', 'S', 'SS', 'FS', 'DB','S/FS','S/PR','S/SS','CB/FS','CB/SS','CB/S','LB','ILB','WR','SS/S'], 
-
-        'WR': ['WR', 'X', 'Z', 'SLOT', 'REC', 'TE'],
-        'RB': ['RB', 'HB', 'FB','RB/CB', 'WR'],
-        'FB': ['RB', 'FB','FB/TE'],
-        'HB': ['RB', 'HB'],
-        'TE': ['TE', 'H-BACK', 'WR','T', "RT"],
-        
-        'OL': ['OL', 'OT', 'G', 'T', 'LT', 'RT', 'C','G/C','RT/T','C/G','LT/T','RT/G',"S"],
-        'OT': ['OT', 'T', 'LT', 'RT','G', 'C', 'G/C', 'RT/T', 'C/T', 'G/T', 'OL'],
-        'OG': ['G', 'OL', 'C',"LT"], 
-        'NT': ['NT', 'DT','DE'], 
-        'T': ['T', 'OT', 'LT', 'RT','LT/T','RT/T','RT/G','C/T','G/T','G','C', 'TE'],
-        'G': ['G', 'OG', 'OL','C','G/C', 'RT/G', 'C/G', 'LT/G', 'T/G', 'G/G','LT','T', 'RT'], 
-        'C': ['C', 'OC', 'G', 'OL','T'],
-
-        'QB':['WR','QB'],
-
-        'K': ['K', 'PK', 'P'],
-        'P': ['P', 'K', 'PK'],
-        'K/P': ['K', 'P', 'PK'],
-
-        
-
-    }
-
-    return mapping.get(pos, [pos])
 
 
 
@@ -353,12 +105,15 @@ def fetch_with_retries(url, retries=3):
         time.sleep(1 + random.random())
     raise Exception(f"Failed to fetch {url}")
 
+
 def parse_table(table, team_abbr=None):
     tbody_rows = table.find('tbody').find_all('tr')
 
     # Find first valid data row to determine real column count
     for tr in tbody_rows:
-        first_cells = [td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]
+        first_cells = [
+            td.get_text(strip=True) for td in tr.find_all(['td', 'th'])
+        ]
         if len(first_cells) >= 5:
             break
     else:
@@ -367,13 +122,18 @@ def parse_table(table, team_abbr=None):
     # Use thead headers if available
     thead = table.find('thead')
     if thead:
-        raw_headers = [th.get_text(strip=True) for th in thead.find_all('th') if th.get_text(strip=True)]
+        raw_headers = [
+            th.get_text(strip=True) for th in thead.find_all('th')
+            if th.get_text(strip=True)
+        ]
     else:
         raw_headers = []
 
     # Pad or trim headers to match row
     if len(raw_headers) < len(first_cells):
-        raw_headers += [f"Column{i}" for i in range(len(raw_headers), len(first_cells))]
+        raw_headers += [
+            f"Column{i}" for i in range(len(raw_headers), len(first_cells))
+        ]
     elif len(raw_headers) > len(first_cells):
         raw_headers = raw_headers[:len(first_cells)]
 
@@ -420,7 +180,9 @@ def parse_table(table, team_abbr=None):
         if len(cells) < len(headers):
             cells += [''] * (len(headers) - len(cells))
         elif len(cells) > len(headers):
-            print(f"⚠️ Trimming row {i} on {team_abbr}: {len(cells)} vs {len(headers)}")
+            print(
+                f"⚠️ Trimming row {i} on {team_abbr}: {len(cells)} vs {len(headers)}"
+            )
             cells = cells[:len(headers)]
 
         rows.append(cells)
@@ -433,13 +195,16 @@ def parse_table(table, team_abbr=None):
     df = df.rename(columns={df.columns[0]: "Player"})
     return df
 
+
 def parse_fa_table(table, team_abbr=None):
     tbody_rows = table.find('tbody').find_all('tr')
 
     # Extract and clean headers
     thead = table.find('thead')
     if thead:
-        raw_headers = [th.get_text(" ", strip=True) for th in thead.find_all('th')]
+        raw_headers = [
+            th.get_text(" ", strip=True) for th in thead.find_all('th')
+        ]
     else:
         raw_headers = []
 
@@ -481,12 +246,16 @@ def parse_fa_table(table, team_abbr=None):
 
     return df
 
+
 def parse_draft_pool_table(table, team_abbr=None):
     tbody_rows = table.find('tbody').find_all('tr')
 
     thead = table.find('thead')
     if thead:
-        raw_headers = [th.get_text(strip=True) for th in thead.find_all('th') if th.get_text(strip=True)]
+        raw_headers = [
+            th.get_text(strip=True) for th in thead.find_all('th')
+            if th.get_text(strip=True)
+        ]
     else:
         raw_headers = []
 
@@ -514,9 +283,6 @@ def parse_draft_pool_table(table, team_abbr=None):
 
     df = pd.DataFrame(rows, columns=["Player", "Pos", "Cap Hit"])
     return df
-
-
-
 
 
 # -------------------- Spotrac Data Fetching --------------------
@@ -556,7 +322,8 @@ def get_spotrac_data():
 
             for table in tables:
                 label = None
-                header_h2 = table.find_previous(lambda tag: tag.name == "h2" and year in tag.text)
+                header_h2 = table.find_previous(
+                    lambda tag: tag.name == "h2" and year in tag.text)
                 if header_h2:
                     text = header_h2.text.strip().lower()
                     if "injured reserve" in text:
@@ -579,25 +346,35 @@ def get_spotrac_data():
                         df = parse_draft_pool_table(table, team_abbr=abbr)
 
                         # TEMP: Save raw draft pool data for inspection
-                        #filename = f"raw_draft_pool_{abbr}_{year}.csv"
-                        #df.to_csv(filename, index=False)
-                        #print(f"📄 Saved draft pool data to {filename}")
+                        # filename = f"raw_draft_pool_{abbr}_{year}.csv"
+                        # df.to_csv(filename, index=False)
+                        # print(f"📄 Saved draft pool data to {filename}")
 
-                        
+                    # if label == "Injured Reserve":
+                    #     # TEMP: Save raw draft pool data for inspection
+                    #     filename = f"raw_IR_{abbr}_{year}.csv"
+                    #     df.to_csv(filename, index=False)
+                    #     print(f"📄 Saved IR data to {filename}")
+
                     else:
                         df = parse_table(table, team_abbr=abbr)
                         if df.columns.duplicated().any():
-                            print(f"⚠️ Duplicate columns detected in {abbr} {label} {year}:")
+                            print(
+                                f"⚠️ Duplicate columns detected in {abbr} {label} {year}:"
+                            )
                             print(df.columns[df.columns.duplicated()].tolist())
 
                     if not df.empty:
                         df["Team"] = abbr
                         df["Section"] = label
                         df["Year"] = year  # 👈 Tag year here
-                        print(f"✅ {abbr} {label} {year}: {len(df)} rows parsed.")
+                        print(
+                            f"✅ {abbr} {label} {year}: {len(df)} rows parsed.")
                         all_sections.append(df)
                 except Exception as e:
-                    print(f"⚠️ Failed to parse {abbr} table ({label}) ({year}): {e}")
+                    print(
+                        f"⚠️ Failed to parse {abbr} table ({label}) ({year}): {e}"
+                    )
                     continue
 
             time.sleep(0.5)
@@ -610,12 +387,15 @@ def get_spotrac_data():
         fa_tables = fa_soup.find_all('table')
 
         for table in fa_tables:
-            headers = [th.get_text(strip=True).lower() for th in table.find_all('th')]
+            headers = [
+                th.get_text(strip=True).lower() for th in table.find_all('th')
+            ]
             if any(h.startswith("player") for h in headers):
                 fa_df = parse_fa_table(table)
                 if not fa_df.empty:
                     if "To" in fa_df.columns:
-                        fa_df["Team"] = fa_df["To"].where(fa_df["To"].str.strip() != "", "Free Agent")
+                        fa_df["Team"] = fa_df["To"].where(
+                            fa_df["To"].str.strip() != "", "Free Agent")
                     else:
                         fa_df["Team"] = "Free Agent"
                     fa_df["Section"] = "Free Agent"
@@ -632,266 +412,394 @@ def get_spotrac_data():
     final_df.columns = dedupe_columns(final_df.columns)
 
     return final_df
+# -------------------- Position Normalization --------------------
+def map_position(pos):
+    if not isinstance(pos, str):
+        return []
+    pos = pos.strip().upper()
 
+    mapping = {
+        'DL': ['DL', 'DE', 'DT', 'OLB'],
+        'DE': ['DL', 'DE', 'EDGE', 'OLB', 'DT','ILB'],  # EDGE is common in Sleeper
+        'DT': ['DL', 'DT', 'DE', 'G', 'FB'],
+        'LB': ['LB', 'ILB', 'OLB', 'MLB', 'DE', 'FB', 'DE/OLB', 'DT', 'FS', 'S'],
+        'ILB': ['LB', 'ILB', 'MLB', 'DB'],
+        'OLB': ['LB', 'OLB', 'EDGE'],
+        'CB': ['CB', 'DB', 'S', 'FS'],
+        'S': ['S', 'SS', 'FS', 'DB'],
+        'SS': ['S', 'SS'],
+        'FS': ['S', 'FS'],
+        'DB': ['CB', 'S', 'SS', 'FS', 'DB', 'S/FS', 'S/PR', 'S/SS', 'CB/FS','CB/SS', 'CB/S', 'LB', 'ILB', 'SS/S'],
+        'WR': ['WR', 'X', 'Z', 'SLOT', 'REC', 'TE'],
+        'RB': ['RB', 'HB', 'FB', 'RB/CB', 'WR'],
+        'FB': ['RB', 'FB', 'FB/TE'],
+        'HB': ['RB', 'HB'],
+        'TE': ['TE', 'H-BACK', 'WR', 'T', "RT"],
+        'OL': ['OL', 'OT', 'G', 'T', 'LT', 'RT', 'C', 'G/C', 'RT/T', 'C/G','LT/T', 'RT/G', "S"],
+        'OT': ['OT', 'T', 'LT', 'RT', 'G', 'C', 'G/C', 'RT/T', 'C/T', 'G/T', 'OL'],
+        'OG': ['G', 'OL', 'C', "LT"],
+        'NT': ['NT', 'DT', 'DE'],
+        'T': ['T', 'OT', 'LT', 'RT', 'LT/T', 'RT/T', 'RT/G', 'C/T', 'G/T', 'G','C', 'TE', 'OL', 'DT'],
+        'G': ['G', 'OG', 'OL', 'C', 'G/C', 'RT/G', 'C/G', 'LT/G', 'T/G', 'G/G','LT', 'T', 'RT'],
+        'C': ['C', 'OC', 'G', 'OL', 'T'],
+        'QB': ['WR', 'QB'],
+        'K': ['K', 'PK', 'P'],
+        'P': ['P', 'K', 'PK'],
+        'K/P': ['K', 'P', 'PK'],
+    }
+
+    return mapping.get(pos, [pos])
+
+# -------------------- Common Name Equivalents --------------------
+# Groups of first-name equivalents
+COMMON_NAME_GROUPS = [["matt", "matthew"], ["mike", "michael"],
+                      ["nick", "nicky", "nicholas"], ["chris", "christopher"],
+                      ["dan", "daniel", "danny"], ["joe", "joey", "joseph"],
+                      ["tom", "thomas"], ["tony", "anthony"],
+                      ["jim", "jimmy", "james"],
+                      ["bob", "bobby", "rob", "robert", "robby"],
+                      ["alex",
+                       "alexander"], ["zac", "zach", "zack", "zachary"],
+                      ["nate", "nathan"], ["will", "william", "bill", "billy"],
+                      ["sam", "samuel"], ["steve", "steven", "stephen"],
+                      ["rick", "rich", "richard", "dick"],
+                      ["ken", "kenny", "kenneth"], ["fred", "frederick"],
+                      ["cam", "cameron", "camryn"], ["trent", "trenton"],
+                      ["kam", "kamren"], ["dee", "demarcus"],
+                      ["ty", "tyrone", "tyrion", "tyreke"], ["josh", "joshua"],
+                      ["julius", "julian"], ["dax", "daxton"],
+                      ["cj", "chauncey"], ["tj", "tedarrell"],
+                      ["pat", "patrick"], ["gabe", "gabriel"],
+                      ["isaiah", "isaac"], ["jake", "jacob"],
+                      ["andy", "andrew", "drew", "andres"],
+                      ["shaq", "shaquill"], ["bryce", "brycen"],
+                      ["dru", "andru"], ["kyle", "kyler"], ["tra", "travion"],
+                      ["tim", "timothy"]]
+
+# Expanded dictionary of { name: [variants] }
+COMMON_NAME_EQUIVS = {
+    name: group
+    for group in COMMON_NAME_GROUPS
+    for name in group
+}
+
+NICKNAME_OVERRIDES = {
+    "ahmad gardner": "sauce gardner",
+    "chauncey gardner-johnson": "cj gardner-johnson",
+    "ogbonnia okoronkwo": "ogbo okoronkwo",
+    "julius brents": "juju brents",
+    "marquise brown": "hollywood brown",
+    "delmar glaze": "dj glaze",
+    "d'wayne eskridge": "dee eskridge",
+    "dontavian jackson": "lucky jackson",
+    "carlos basham jr.": "boogie basham",
+    "johnny newton": "jer'zhan newton",
+    "jartavius martin": "quan martin",
+    "john parker romo": "parker romo",
+    "anthony booker jr.": "tank booker",
+    "tet mcmillan": "tetairoa mcmillan",
+    "wy'kevious thomas": "bubba thomas",
+    "basil okoye": "c.j. okoye",
+    "john richardson": "jp richardson",
+    "kyrese rowan": "kyrese white",
+    "foley fatukasi": "folorunso fatukasi"
+}
 
 
 # -------------------- Merging --------------------
 def normalize(name):
     if not isinstance(name, str):
         return ""
-    original = name.lower().strip()
-
-    # Remove punctuation and suffixes
     name = name.lower().strip()
+
+    # Direct override check first (raw input form)
+    if name in NICKNAME_OVERRIDES:
+        return normalize(NICKNAME_OVERRIDES[name])
+
+    # Clean name
     name = name.replace("'", "").replace(".", "")
-    name = re.sub(r"\b(jr|sr|iii|ii|iv|v)\b", "", name, flags=re.IGNORECASE)
-    name = re.sub(r"[^\w\s]", "", name)
+    name = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b", "", name)
+    name = re.sub(r"[^\w\s-]", "", name)
     name = re.sub(r"\s+", " ", name).strip()
-
-        # First name canonicalization
-    parts = name.split(" ")
-    if parts and parts[0] in COMMON_NAME_EQUIVS:
-        parts[0] = COMMON_NAME_EQUIVS[parts[0]]
-        name = " ".join(parts)
-
-    # Direct override (nickname mapping)
-    if original in NICKNAME_OVERRIDES:
-        mapped = NICKNAME_OVERRIDES[original]
-        if mapped != original:  # Prevent infinite recursion
-            return normalize(mapped)
 
     return name
 
 
-
 def merge_spotrac_and_sleeper(spotrac_df, sleeper_df):
+    from rapidfuzz import fuzz, process
+
+    debug_logs = []
     player_col = "Player"
-    #print("🔎 Spotrac columns at start of merge:", spotrac_df.columns.tolist())
+
+    # Normalize names
     spotrac_df['name_original'] = spotrac_df[player_col].astype(str)
-
-    
-    if not player_col:
-        raise Exception("Could not find a Player column in Spotrac data.")
-
     spotrac_df['name_norm'] = spotrac_df[player_col].map(normalize)
     sleeper_df['name_norm'] = sleeper_df['full_name'].map(normalize)
 
-    # spotrac_df[['Player', 'Pos', 'name_norm']].drop_duplicates().sort_values('name_norm').to_csv("spotrac_normalized_names.csv", index=False)
-    # sleeper_df[['full_name', 'position', 'name_norm']].drop_duplicates().sort_values('name_norm').to_csv("sleeper_normalized_names.csv", index=False)
+    # Save for debugging
+    spotrac_df[['Player', 'Pos', 'name_norm']].sort_values('name_norm').to_csv(
+        "spotrac_normalized_names.csv", index=False)
+    sleeper_df[['full_name', 'position',
+                'name_norm']].sort_values('name_norm').to_csv(
+                    "sleeper_normalized_names.csv", index=False)
 
-    # print("✅ Normalized name CSVs saved: spotrac_normalized_names.csv & sleeper_normalized_names.csv")
-
-
-    # Create new columns for player_id and sleeper position
     player_ids = []
     sleeper_positions = []
     sleeper_names = []
     unmatched_log = []
-
+    # DEBUG: Check how many "dj turner" entries exist
+    # spotrac = spotrac_df[spotrac_df['name_norm'] == 'kyle williams']
+    # debug_logs.append(
+    #     f"🧾 Found {len(spotrac)} rows for 'kyle wiliams' in Spotrac")
+    # print(spotrac[['Player', 'Pos', 'Age', 'Section']])
+    # # DEBUG: Check how many "dj turner" entries exist
+    # sleeper = sleeper_df[sleeper_df['name_norm'] == 'kyle williams']
+    # debug_logs.append(
+    #     f"🧾 Found {len(sleeper)} rows for 'kyle wiliams' in Spotrac")
+    # print(sleeper[['full_name', 'position']])
 
     for _, row in spotrac_df.iterrows():
-        norm_name = row['name_norm']
-        spotrac_pos = row.get('Pos', '').strip().upper()
-        section = row.get("Section", "")
-        original_name = row.get("name_original", row.get(player_col, "")).strip()
-        matched_player = None
-        possible_matches = sleeper_df[sleeper_df['name_norm'] == norm_name].to_dict('records')
+        try:
+            norm_name = row['name_norm']
+            original_name = row['name_original']
+            spotrac_pos = str(row.get('Pos', '')).upper().strip()
+            section = str(row.get("Section", "")).strip()
+            matched_player = None
 
-        if not possible_matches:
-            print(f"❌ No sleeper match for: Spotrac '{row.get(player_col)}' → norm '{norm_name}'")
-        # else:
-        #     if len(possible_matches) > 1:
-        #         print(f"⚠️ Multiple matches for '{norm_name}': {[p['full_name'] for p in possible_matches]}")
+            # Split compound positions like RB/CB
+            spotrac_pos_parts = [
+                p.strip() for p in spotrac_pos.replace('/', ',').split(',')
+                if p.strip()
+            ]
+            skip_age = section in ["Draft Pool", "Free Agent"]
+            spotrac_age = float(row['Age']) if str(row.get('Age')).replace(
+                '.', '', 1).isdigit() else None
 
-        # Special handling for Draft Pool and Free Agent – skip age matching
-        if section in ["Draft Pool", "Free Agent"]:
-            # Try position-only match
-            for sleeper_entry in possible_matches:
-                sleeper_pos = sleeper_entry.get('position', '')
-                valid_spotrac_equivs = map_position(sleeper_pos)
-                if spotrac_pos in valid_spotrac_equivs:
-                    matched_player = sleeper_entry
-                    break
-            # Fallback to first name match
-            if not matched_player and possible_matches:
-                matched_player = possible_matches[0]
+            # STEP 1: Common name substitution
+            first = norm_name.split(" ")[0]
+            variants = COMMON_NAME_EQUIVS.get(first, [first])
+            variant_names = set()
+            for alt in variants:
+                alt_name = norm_name.replace(first, alt, 1)
+                variant_names.add(alt_name)
+            variant_names.add(norm_name)
 
-        else:
-            # Standard Matching (Position + Age)
-            age_val = row.get('Age', '')
-            spotrac_age = float(age_val) if str(age_val).strip().replace('.', '', 1).isdigit() else None
+            possible_matches = sleeper_df[sleeper_df['name_norm'].isin(
+                variant_names)].to_dict('records')
 
-            for sleeper_entry in possible_matches:
-                sleeper_pos = sleeper_entry.get('position', '')
-                valid_spotrac_equivs = map_position(sleeper_pos)
-                sleeper_age = sleeper_entry.get('age')
-                if spotrac_pos in valid_spotrac_equivs and sleeper_age and spotrac_age:
-                    if abs(sleeper_age - spotrac_age) <= 1:
-                        matched_player = sleeper_entry
-                        break
+            # STEP 2: Rank all matches by name/pos/age (improved logic)
+            best_match = None
+            best_score = -1
 
+            for entry in possible_matches:
+                sleeper_name = entry.get('full_name', '')
+                sleeper_norm = normalize(sleeper_name)
+                sleeper_pos = entry.get('position', '')
+                sleeper_age = entry.get('age')
+                sleeper_id = entry.get('player_id', '')
+
+                # Reject candidates with mismatched last names
+                spot_last = norm_name.split()[-1]
+                sleep_last = sleeper_norm.split()[-1]
+                if spot_last != sleep_last:
+                    continue
+
+                # Reject mismatched first-letter of first name (optional tightening)
+                spot_first = norm_name.split()[0]
+                sleep_first = sleeper_norm.split()[0]
+                if spot_first[0] != sleep_first[0]:
+                    continue
+
+            
+                # Compute match scores
+                name_score = fuzz.ratio(norm_name, sleeper_norm)
+                if spot_first != sleep_first:
+                    name_score -= 10
+
+                valid_pos = map_position(sleeper_pos)
+                pos_score = 25 if any(pos in valid_pos for pos in spotrac_pos_parts) else 0
+
+                if skip_age:
+                    age_score = 20
+                elif sleeper_age and spotrac_age:
+                    age_diff = abs(sleeper_age - spotrac_age)
+                    age_score = max(0, 20 - age_diff * 10)  # stronger penalty
+                else:
+                    age_score = 0
+
+                spotrac_team = str(row.get("Team", "")).upper()
+                sleeper_team = str(entry.get("team", "")).upper()
+                team_score = 20 if sleeper_team == spotrac_team else 0
+
+                score = name_score + pos_score + age_score + team_score
+
+
+                if score > best_score:
+                    best_score = score
+                    best_match = entry
+
+                if spotrac_df['name_norm'].value_counts().get(norm_name, 0) > 1:
+                    debug_logs.append(
+                        f"🧪 CANDIDATE for '{original_name}' → {sleeper_name} | Pos={sleeper_pos} | Age={sleeper_age} | ID={sleeper_id} | Score={score}"
+                    )
+
+            # STEP 3: Accept best match if score is strong enough
+            if best_match and best_score >= 80:
+                matched_player = best_match
+                if norm_name == "dj turner":
+                    debug_logs.append(
+                        f"✅ DJ TURNER FINAL MATCH: {matched_player['full_name']} | ID={matched_player['player_id']} | Score={best_score}"
+                    )
+                else:
+                    debug_logs.append(
+                        f"✅ Matched '{original_name}' → '{matched_player['full_name']}' (score: {best_score})"
+                    )
+
+            # STEP 3: Match by name + pos only
             if not matched_player:
-                for sleeper_entry in possible_matches:
-                    sleeper_pos = sleeper_entry.get('position', '')
-                    valid_spotrac_equivs = map_position(sleeper_pos)
-                    if spotrac_pos in valid_spotrac_equivs:
-                        matched_player = sleeper_entry
+                for entry in possible_matches:
+                    sleeper_pos = entry.get('position', '')
+                    valid_pos = map_position(sleeper_pos)
+                    if any(pos in valid_pos for pos in spotrac_pos_parts):
+                        matched_player = entry
                         break
 
-            if not matched_player and possible_matches and spotrac_age:
-                best_diff = float('inf')
+            # STEP 4: Try middle-name or suffix trimming (e.g. "john samuel shenker" → "john shenker")
+            if not matched_player and len(norm_name.split()) > 2:
+                two_part = f"{norm_name.split()[0]} {norm_name.split()[-1]}"
+                match_row = sleeper_df[sleeper_df['name_norm'] == two_part]
+                if not match_row.empty:
+                    matched_player = match_row.iloc[0].to_dict()
+                    debug_logs.append(
+                        f"✂️ Trimmed match '{original_name}' → '{matched_player['full_name']}'"
+                    )
+
+            # STEP 5: Hyphen-smart fuzzy match (full name and part variations)
+            if not matched_player:
+                spot_parts = norm_name.replace("-", " ").split()
+                best_score = 0
                 best_match = None
-                for sleeper_entry in possible_matches:
-                    sleeper_age = sleeper_entry.get('age')
-                    if sleeper_age:
-                        diff = abs(sleeper_age - spotrac_age)
-                        if diff < best_diff:
-                            best_diff = diff
-                            best_match = sleeper_entry
-                if best_diff <= 1:
+
+                for _, s_row in sleeper_df.iterrows():
+                    sleeper_norm = s_row.get('name_norm', "")
+                    sleeper_parts = sleeper_norm.replace("-", " ").split()
+
+                    # Match if both names share 2+ parts
+                    shared = set(spot_parts).intersection(sleeper_parts)
+                    if len(shared) >= 2:
+                        matched_player = s_row.to_dict()
+                        debug_logs.append(
+                            f"🔗 Hyphen-parts matched '{original_name}' → '{matched_player['full_name']}'"
+                        )
+                        break
+
+                    # Also try fuzzy match on reduced forms (drop middle names)
+                    spot_reduced = f"{spot_parts[0]} {spot_parts[-1]}" if len(
+                        spot_parts) >= 2 else norm_name
+                    sleep_reduced = f"{sleeper_parts[0]} {sleeper_parts[-1]}" if len(
+                        sleeper_parts) >= 2 else sleeper_norm
+
+                    # Try fuzzy on:
+                    for a, b in [(norm_name, sleeper_norm),
+                                 (spot_reduced, sleep_reduced)]:
+                        score = fuzz.ratio(a, b)
+                        if score > best_score:
+                            best_score = score
+                            best_match = s_row.to_dict()
+
+                if not matched_player and best_score >= 90:
                     matched_player = best_match
+                    debug_logs.append(
+                        f"🧪 Fuzzy full-name fallback '{original_name}' → '{matched_player['full_name']}' (score: {best_score})"
+                    )
 
+            # STEP 6: Final fuzzy match
             if not matched_player:
-                fallback_name = NICKNAME_OVERRIDES.get(norm_name)
-                if fallback_name:
-                    fallback_norm = normalize(fallback_name)
-                    fallback_matches = sleeper_df[sleeper_df['name_norm'] == fallback_norm].to_dict('records')
-                    if fallback_matches:
-                        matched_player = fallback_matches[0]
-                        print(f"🔁 Fallback override used for '{row.get(player_col)}' → '{fallback_name}'")
+                candidate_names = sleeper_df['name_norm'].tolist()
+                fuzzy_try = process.extractOne(norm_name,
+                                               candidate_names,
+                                               scorer=fuzz.ratio)
+                if fuzzy_try and fuzzy_try[1] >= 90:
+                    match_row = sleeper_df[sleeper_df['name_norm'] ==
+                                           fuzzy_try[0]]
+                    if not match_row.empty:
+                        matched_player = match_row.iloc[0].to_dict()
+                        debug_logs.append(
+                            f"🧪 Fuzzy matched '{original_name}' → '{matched_player['full_name']}' (score: {fuzzy_try[1]})"
+                        )
 
-            # fallback: try splitting hyphenated last names
-            # Hyphen fallback
-            if matched_player is None and "-" in original_name:
-                try:
-                    first, last_hyphenated = original_name.split(" ", 1)
-                except ValueError:
-                    first, last_hyphenated = original_name, ""
+            # STEP 7: Log suggestions
+            if not matched_player:
+                candidates = process.extract(norm_name,
+                                             sleeper_df['name_norm'].tolist(),
+                                             scorer=fuzz.ratio,
+                                             limit=3)
+                suggestion_str = ", ".join(
+                    [f"{c[0]} ({c[1]})" for c in candidates])
+                debug_logs.append(
+                    f"🔍 Suggestions for '{original_name}' → {suggestion_str}")
 
-                last_parts = last_hyphenated.split("-")
+            # Final assignment
+            if matched_player:
+                player_ids.append(matched_player.get('player_id', ''))
+                sleeper_positions.append(matched_player.get('position', ''))
+                sleeper_names.append(matched_player.get('full_name', ''))
+            else:
+                player_ids.append("UNMATCHED")
+                sleeper_positions.append("")
+                sleeper_names.append("UNMATCHED")
+                unmatched_log.append(row.to_dict())
 
-                # 1. Full spaced last name
-                print("step 1")
-                full_spaced = normalize(f"{first} {' '.join(last_parts)}")
-                trial_df = sleeper_df[sleeper_df['name_norm'] == full_spaced]
-                if not trial_df.empty:
-                    matched_player = trial_df.iloc[0]
-                    print(f"🔁 Matched with spaced hyphen: '{original_name}' → '{matched_player['full_name']}'")
-
-                # 2. Try each last name individually
-                if matched_player is None:
-                    print("step 2")
-                    for part in last_parts:
-                        partial_name = normalize(f"{first} {part}")
-                        trial_df = sleeper_df[sleeper_df['name_norm'] == partial_name]
-                        if not trial_df.empty:
-                            matched_player = trial_df.iloc[0]
-                            print(f"🔁 Matched with partial hyphen: '{original_name}' → '{matched_player['full_name']}' via '{part}'")
-                            break
-
-                # 3. Fuzzy match on combined options
-                if matched_player is None:
-                    print("step 3")
-                    combo_names = [
-                        normalize(f"{first} {''.join(last_parts)}"),         # coloncastillo
-                        normalize(f"{first} {last_parts[0]}"),               # colon
-                        normalize(f"{first} {last_parts[1]}") if len(last_parts) > 1 else "",
-                        normalize(f"{first} {' '.join(last_parts)}"),        # colon castillo
-                    ]
-                    candidate_names = sleeper_df['name_norm'].tolist()
-                    for trial in combo_names:
-                        if not trial:
-                            continue
-                        best_match = process.extractOne(trial, candidate_names, scorer=fuzz.ratio)
-                        if best_match and best_match[1] >= 90:
-                            trial_matches_df = sleeper_df[sleeper_df['name_norm'] == best_match[0]]
-                            if not trial_matches_df.empty:
-                                matched_player = trial_matches_df.iloc[0]
-                                print(f"🧪 Fuzzy hyphen match '{original_name}' → '{matched_player['full_name']}' (score: {best_match[1]}) via '{trial}'")
-                                break
-
-                # 4. Fuzzy match against each part with first name
-                if matched_player is None:
-                    print("step 4")
-                    for part in last_parts:
-                        fuzzy_name = normalize(f"{first} {part}")
-                        best_match = process.extractOne(fuzzy_name, candidate_names, scorer=fuzz.ratio)
-                        if best_match and best_match[1] >= 90:
-                            trial_matches_df = sleeper_df[sleeper_df['name_norm'] == best_match[0]]
-                            if not trial_matches_df.empty:
-                                matched_player = trial_matches_df.iloc[0]
-                                print(f"🧪 Fuzzy part match '{original_name}' → '{matched_player['full_name']}' (score: {best_match[1]}) via '{fuzzy_name}'")
-                                break
-
-
-        if matched_player is None:
-            # 🔍 Try fuzzy match as last resort
-            FUZZY_MATCH_THRESHOLD = 90
-            candidate_names = sleeper_df['name_norm'].tolist()
-
-            best_match = process.extractOne(norm_name, candidate_names, scorer=fuzz.ratio)
-
-            if best_match and best_match[1] >= FUZZY_MATCH_THRESHOLD:
-                match_name = best_match[0]
-                score = best_match[1]
-
-                trial_matches_df = sleeper_df[sleeper_df['name_norm'] == match_name]
-
-                if not trial_matches_df.empty:
-                    matched_player = trial_matches_df.iloc[0]
-                    print(f"🧪 Fuzzy matched '{row.get(player_col)}' → '{matched_player['full_name']}' (score: {score})")
-
-
-
-
-
-        if matched_player is not None:
-            player_ids.append(matched_player['player_id'])
-            sleeper_positions.append(matched_player['position'])
-            sleeper_names.append(matched_player['full_name'])
-        else:
+        except Exception as e:
+            debug_logs.append(f"❌ Error matching '{row.get('Player')}' — {e}")
             player_ids.append("UNMATCHED")
             sleeper_positions.append("")
             sleeper_names.append("UNMATCHED")
-            unmatched_log.append(row.to_dict())  # Include full row for debugging
+            unmatched_log.append(row.to_dict())
 
-
-
-    # Add to DataFrame
+    # Final output
     spotrac_df['player_id'] = player_ids
     spotrac_df['position'] = sleeper_positions
     spotrac_df['sleeper_name'] = sleeper_names
 
-    print(f"✅ Merged data: {len(spotrac_df)} rows after join with mapped position match")
-    #print(spotrac_df[['name_norm', 'player_id', 'position']].head(5))
-
     if unmatched_log:
-        print(f"🔎 {len(unmatched_log)} unmatched players:")
-        # for name in unmatched_log[:2]:  # Show first 10 to avoid spam
-        #     print(f"   - {name}")
-        # if len(unmatched_log) > 2:
-        #     print(f"   ... and {len(unmatched_log) - 2} more.")
-    else:
-        print("✅ All players matched.")
+        pd.DataFrame(unmatched_log).to_csv("unmatched_spotrac_players.csv",
+                                           index=False)
+        debug_logs.append(
+            f"🔎 {len(unmatched_log)} unmatched players written to unmatched_spotrac_players.csv"
+        )
 
+    if debug_logs:
+        pd.DataFrame({
+            'Log': debug_logs
+        }).to_csv("merge_debug_log.csv", index=False)
 
     return spotrac_df
-
-
-
 
 
 # -------------------- Main --------------------
 if __name__ == "__main__":
     try:
         # Delete existing file if it exists
-        if os.path.exists("SalaryDB.csv"):
+        if os.path.exists("SalaryDB.csv", ):
             os.remove("SalaryDB.csv")
             print("🗑️ Existing SalaryDB.csv deleted.")
 
         if os.path.exists("unmatched_spotrac_players.csv"):
             os.remove("unmatched_spotrac_players.csv")
             print("🗑️ Existing unmatched_spotrac_players.csv deleted.")
+
+        if os.path.exists("merge_debug_log.csv"):
+            os.remove("merge_debug_log.csv")
+            print("🗑️ Existing merge_debug_log.csv deleted.")
+
+        if os.path.exists("sleeper_normalized_names.csv"):
+            os.remove("sleeper_normalized_names.csv")
+            print("🗑️ Existing sleeper_normalized_names.csv deleted.")
+
+        if os.path.exists("spotrac_normalized_names.csv"):
+            os.remove("spotrac_normalized_names.csv")
+            print("🗑️ spotrac_normalized_names.csv deleted.")
 
         spotrac_df = get_spotrac_data()
         sleeper_df = load_sleeper_api()
@@ -911,5 +819,3 @@ if __name__ == "__main__":
 
     except Exception as e:
         print(f"❌ Error: {e}")
-
-

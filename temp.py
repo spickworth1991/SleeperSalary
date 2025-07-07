@@ -1,43 +1,29 @@
 import requests
 import pandas as pd
-import re
 
-# Your normalization function
-def normalize(name):
-    if not isinstance(name, str):
-        return ""
-    name = name.lower().strip()
-    name = name.replace("'", "").replace(".", "")
-    name = re.sub(r"\b(jr|sr|iii|ii|iv|v)\b", "", name, flags=re.IGNORECASE)
-    name = re.sub(r"[^\w\s]", "", name)
-    name = re.sub(r"\s+", " ", name).strip()
-    return name
+# Target player IDs (as strings)
+target_ids = {
+    "0", "10233", "11145", "11949", "12503", "13179", "2323",
+    "2422", "3199", "4958", "4990", "5436", "5860", "5878",
+    "5928", "7127", "7606", "7621", "7688", "8312"
+}
 
-# Fetch Sleeper players
-def fetch_sleeper_players():
-    url = "https://api.sleeper.app/v1/players/nfl"
-    resp = requests.get(url)
-    data = resp.json()
 
-    rows = []
-    for player_id, info in data.items():
-        full_name = info.get("full_name", "")
-        position = info.get("position", "")
-        if not full_name:
-            continue
+# Fetch all players from Sleeper
+url = "https://api.sleeper.app/v1/players/nfl"
+sleeper_data = requests.get(url).json()
 
-        rows.append({
-            "player_id": player_id,
-            "full_name": full_name,
-            "position": position,
-            "name_norm": normalize(full_name)
+# Match by player_id
+matches = []
+for player in sleeper_data.values():
+    if str(player.get("player_id")) in target_ids:
+        matches.append({
+            "player_id": player.get("player_id"),
+            "full_name": player.get("full_name"),
+            "position": player.get("position"),
+            "team": player.get("team")
         })
 
-    return pd.DataFrame(rows)
-
-# Save to CSV for inspection
-if __name__ == "__main__":
-    df = fetch_sleeper_players()
-    df = df.sort_values(by="name_norm")
-    df.to_csv("SleeperPlayers_Normalized.csv", index=False)
-    print("✅ Sleeper normalized player list written to SleeperPlayers_Normalized.csv")
+# Display results
+df = pd.DataFrame(matches).sort_values("player_id")
+print(df)
