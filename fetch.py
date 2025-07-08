@@ -12,7 +12,7 @@ SERVICE_ACCOUNT_FILE = r'C:\Users\spick\OneDrive\Desktop\nfl_salary_tracker\conf
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SPREADSHEET_ID = '1fm6o9HFT48F1AG0A5f4te3BDK8PHVnxksUVjWTDSCiI'
 
-YEARS = ['2024', '2025']
+YEARS = ['2024', '2025','2026']
 # -------------------- Constants --------------------
 # Define the sheet names and team abbreviations
 SLEEPER_SHEET = 'SleeperPlayersList'

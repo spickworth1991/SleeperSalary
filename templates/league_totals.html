@@ -1,0 +1,13 @@
+<h1>{{ league_name }} – League Cap Summary</h1>
+<table border="1">
+  <tr>
+    <th>Team</th>
+    <th>Total Cap</th>
+  </tr>
+  {% for team in teams %}
+  <tr>
+    <td><a href="{{ url_for('team_detail', league_name=league_name, user_id=team.user_id) }}">{{ team.team_name }}</a></td>
+    <td>{{ team.total_cap }}</td>
+  </tr>
+  {% endfor %}
+</table>
