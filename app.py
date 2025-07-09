@@ -1,5 +1,6 @@
 import json
 import os
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import pandas as pd
 import requests
@@ -11,9 +12,16 @@ app = Flask(__name__,
             template_folder='templates')
 app.secret_key = "supersecret"  # Needed for flashing messages
 
-CONFIG_FILE = "leagues.json"
-ADMIN_PASSWORD = "sleeperpass123"
 
+SERVICE_ACCOUNT_FILE = "config/nfl-stats-ff-00a13e9db7db.json"  # update path if needed
+SPREADSHEET_ID = "1fm6o9HFT48F1AG0A5f4te3BDK8PHVnxksUVjWTDSCiI"
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+
+
+def get_service():
+    creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    return build('sheets', 'v4', credentials=creds)
 
 def load_flattened_salary_data():
     df = pd.read_csv("SalaryDB.csv", dtype={"player_id": str})
@@ -22,8 +30,32 @@ def load_flattened_salary_data():
 
 
 def load_all_leagues():
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+    service = get_service()
+    sheet = service.spreadsheets()
+    result = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range="config!A2:E"
+    ).execute()
+    values = result.get('values', [])
+
+    leagues = {}
+    for row in values:
+        if len(row) < 4:
+            continue  # Skip incomplete rows
+        league_name = row[0]
+        leagues[league_name] = {
+            "password": row[1],
+            "admin_password": row[2],
+            "league_id": row[3],
+            "league_name": league_name,
+        }
+        if len(row) >= 5 and row[4]:
+            try:
+                leagues[league_name]["themes"] = json.loads(row[4])
+            except:
+                leagues[league_name]["themes"] = {}
+    return leagues
+
 
 TEAM_THEME_DATA = {
     "ARI": {"name": "Arizona Cardinals", "color": "#97233F", "logo": "ARI.png"},
@@ -287,6 +319,40 @@ def league_summary(league_name):
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
+def update_league_config(league_name, field, value):
+    service = get_service()
+    sheet = service.spreadsheets()
+
+    # Find the row for the league
+    result = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range="config!A2:A"
+    ).execute()
+    league_names = [row[0] for row in result.get("values", [])]
+
+    if league_name not in league_names:
+        return False  # League not found
+
+    row_index = league_names.index(league_name) + 2  # 1-based + header
+
+    col_map = {
+        "password": "B",
+        "admin_password": "C",
+        "league_id": "D",
+        "themes": "E"
+    }
+    if field == "themes":
+        value = json.dumps(value)
+
+    range_ = f"config!{col_map[field]}{row_index}"
+    sheet.values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=range_,
+        valueInputOption="RAW",
+        body={"values": [[value]]}
+    ).execute()
+    return True
+
 
 @app.route("/admin/<league_name>", methods=["GET", "POST"])
 def admin_page(league_name):
@@ -296,13 +362,14 @@ def admin_page(league_name):
 
     if request.method == "POST":
         league_id = request.form.get("league_id", "").strip()
-        leagues[league_name]["league_id"] = league_id
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(leagues, f, indent=2)
+        update_league_config(league_name, "themes", themes)
+
         flash("✅ League ID updated.", "success")
         return redirect(url_for("admin_page", league_name=league_name))
 
     config = leagues[league_name]
+    themes = config.get("themes", {})
+
 
     unmatched_count = 0
     try:
@@ -670,9 +737,7 @@ def theme_selector(league_name):
             if key.startswith("team_") and val.strip():
                 team = key.replace("team_", "")
                 themes[team] = val.strip()  # This is now a user_id
-        leagues[league_name]["themes"] = themes
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(leagues, f, indent=2)
+        update_league_config(league_name, "themes", themes)
         flash("✅ Team themes updated.", "success")
         return redirect(url_for("theme_selector", league_name=league_name))
 
