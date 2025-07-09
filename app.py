@@ -13,7 +13,7 @@ app = Flask(__name__,
 app.secret_key = "supersecret"  # Needed for flashing messages
 
 
-SERVICE_ACCOUNT_FILE = "config/nfl-stats-ff-00a13e9db7db.json"  # update path if needed
+SERVICE_ACCOUNT_FILE = "nfl-stats-ff-00a13e9db7db.json"  # update path if needed
 SPREADSHEET_ID = "1fm6o9HFT48F1AG0A5f4te3BDK8PHVnxksUVjWTDSCiI"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
