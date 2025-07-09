@@ -13,7 +13,11 @@ app = Flask(__name__,
 app.secret_key = "supersecret"  # Needed for flashing messages
 
 
-SERVICE_ACCOUNT_FILE = "nfl-stats-ff-00a13e9db7db.json"  # update path if needed
+if os.environ.get("RENDER") == "true":
+    SERVICE_ACCOUNT_FILE = "nfl-stats-ff-00a13e9db7db.json"
+else:
+    SERVICE_ACCOUNT_FILE = "config/nfl-stats-ff-00a13e9db7db.json"
+
 SPREADSHEET_ID = "1fm6o9HFT48F1AG0A5f4te3BDK8PHVnxksUVjWTDSCiI"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
@@ -318,6 +322,58 @@ def league_summary(league_name):
 
     except Exception as e:
         return f"❌ Error: {str(e)}"
+
+def save_new_league_to_google_sheet(league_name, password, admin_password, league_id):
+    service = get_service()
+    sheet = service.spreadsheets()
+
+    values = [[
+        league_name.strip(),
+        password.strip(),
+        admin_password.strip(),
+        league_id.strip(),
+        json.dumps({})  # empty themes
+    ]]
+
+    body = {"values": values}
+    sheet.values().append(
+        spreadsheetId=SPREADSHEET_ID,
+        range="config!A2",  # assumes row 1 is header
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body=body
+    ).execute()
+
+@app.route("/create-league", methods=["GET", "POST"])
+def create_league():
+    if request.method == "POST":
+        league_name = request.form.get("league_name", "").strip()
+        password = request.form.get("league_password", "").strip()
+
+        admin_password = request.form.get("admin_password", "").strip()
+        league_id = request.form.get("league_id", "").strip()
+
+        if not league_name or not password:
+            flash("League name and password are required.", "error")
+            return redirect(url_for("create_league"))
+
+        leagues = load_all_leagues()
+        if league_name in leagues:
+            flash("❌ A league with that name already exists.", "error")
+            return redirect(url_for("create_league"))
+
+        try:
+            save_new_league_to_google_sheet(league_name, password, admin_password, league_id)
+            flash("✅ League created! You can now log in.", "success")
+            return redirect(url_for("login"))
+        except Exception as e:
+            flash(f"❌ Error saving league: {str(e)}", "error")
+            return redirect(url_for("create_league"))
+
+    return render_template("create_league.html")
+
+
+
 
 def update_league_config(league_name, field, value):
     service = get_service()

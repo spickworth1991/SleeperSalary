@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create New League</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+    <h1>Create a New League</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST">
+        <label>League Name:</label>
+        <input type="text" name="league_name" required title="Enter league name" placeholder="League Name"><br>
+
+        <label>League Password:</label>
+        <input type="password" name="league_password" required title="Enter league password" placeholder="League Password"><br>
+
+        <label>Admin Password:</label>
+        <input type="password" name="admin_password" title="Enter admin password" placeholder="Admin Password"><br>
+
+        <label>League ID (from Sleeper):</label>
+        <input type="text" name="league_id" required title="Enter league ID from Sleeper" placeholder="League ID"><br>
+
+        <button type="submit">Create League</button>
+    </form>
+
+    <hr>
+    <a href="{{ url_for('login') }}">← Back to Login</a>
+</div>
+</body>
+</html>
