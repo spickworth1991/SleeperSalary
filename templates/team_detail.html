@@ -13,6 +13,10 @@
     <div class="team-theme-banner" style="background-color: {{ theme_info.color }}; color: white; padding: 1em; text-align: center;">
       <img src="{{ url_for('static', filename='logos/' ~ theme_info.logo) }}"
            alt="{{ theme_info.name }} Logo"
+           onerror="this.style.display='none';"
+           style="height: 60px; vertical-align: middle; margin-right: 10px;">
+
+           alt="{{ theme_info.name }} Logo"
            style="height: 60px; vertical-align: middle; margin-right: 10px;">
       <strong>{{ theme_info.name }}</strong> — Managed by {{ team_name }}
     </div>
