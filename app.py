@@ -1,7 +1,5 @@
 import json
-import re
 import os
-from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import pandas as pd
 import requests
@@ -13,18 +11,8 @@ app = Flask(__name__,
             template_folder='templates')
 app.secret_key = "supersecret"  # Needed for flashing messages
 
-CONFIG_FILE = "config/leagues.json"
+CONFIG_FILE = "leagues.json"
 ADMIN_PASSWORD = "sleeperpass123"
-
-SERVICE_ACCOUNT_FILE = "config/nfl-stats-ff-00a13e9db7db.json"  # update path if needed
-SPREADSHEET_ID = "1fm6o9HFT48F1AG0A5f4te3BDK8PHVnxksUVjWTDSCiI"
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-
-
-def get_service():
-    creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    return build('sheets', 'v4', credentials=creds)
 
 
 def load_flattened_salary_data():
