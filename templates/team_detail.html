@@ -1,23 +1,61 @@
-<h1>{{ team_name }} – Roster</h1>
-<p>Total Cap: {{ total_cap }}</p>
-<table border="1">
-  <tr>
-    <th>Player</th>
-    <th>Team</th>
-    <th>Position</th>
-    <th>Age</th>
-    <th>Cap Hit</th>
-    <th>Next Year</th>
-  </tr>
-  {% for p in players %}
-  <tr>
-    <td>{{ p.Player }}</td>
-    <td>{{ p.Team }}</td>
-    <td>{{ p.Pos }}</td>
-    <td>{{ p.Age }}</td>
-    <td>{{ p['Cap Hit'] }}</td>
-    <td>{{ p['Next Year'] }}</td>
-  </tr>
-  {% endfor %}
-</table>
-<a href="{{ url_for('league_totals', league_name=league_name) }}">⬅ Back to League Totals</a>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Details</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="{% if theme_info %}theme-active{% endif %}">
+
+  {% if theme_info %}
+    <div class="team-theme-banner" style="background-color: {{ theme_info.color }}; color: white; padding: 1em; text-align: center;">
+      <img src="{{ url_for('static', filename='logos/' ~ theme_info.logo) }}"
+           alt="{{ theme_info.name }} Logo"
+           style="height: 60px; vertical-align: middle; margin-right: 10px;">
+      <strong>{{ theme_info.name }}</strong> — Managed by {{ team_name }}
+    </div>
+  {% endif %}
+
+  <div class="container">
+    <h1>{{ team_name }} – Roster</h1>
+    <p>Total Cap: {{ total_cap }}</p>
+
+    <table border="1">
+      <tr>
+        <th>Player</th>
+        <th>Team</th>
+        <th>Position</th>
+        <th>Age</th>
+        <th>Cap Hit</th>
+        <th>Next Year</th>
+      </tr>
+      {% for p in players %}
+      <tr>
+        <td>{{ p.Player }}</td>
+        <td>{{ p.Team }}</td>
+        <td>{{ p.Pos }}</td>
+        <td>{{ p.Age }}</td>
+        <td>{{ p['Cap Hit'] }}</td>
+        <td>{{ p['Next Year'] }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <a href="{{ url_for('league_totals', league_name=league_name) }}">⬅ Back to League Totals</a> 
+    {% if session.get('is_admin') and session.get('league_name') %}
+  <div style="margin-top: 20px;">
+    <a href="{{ url_for('admin_page', league_name=session['league_name']) }}">⚙️ Admin Settings</a>
+  </div>
+{% endif %}
+
+    <p style="font-size: 0.8em; color: gray; margin-top: 20px;">{{ footer_note }}</p>
+  </div>
+
+  <footer>
+    SleeperTools &copy; 2025
+  </footer>
+
+</body>
+</html>

@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ league_name }} - Team Salaries</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+    <body>
+    <a href="{{ url_for('admin_page', league_name=league_name) }}">← Back to Admin Settings </a> |
+    <div class="container">
     <h1>{{ league_name }} - Team Salary Summary</h1>
 
     {% for team in teams %}
@@ -51,5 +54,17 @@
         <hr>
     {% endfor %}
     <p style="font-size: 0.8em; color: gray; margin-top: 20px;">{{ footer_note }}</p>
+</body>
+</html>
+{% if session.get('is_admin') and session.get('league_name') %}
+  <div style="margin-top: 20px;">
+    <a href="{{ url_for('admin_page', league_name=session['league_name']) }}">⚙️ Admin Settings</a>
+  </div>
+{% endif %}
+
+</div>
+<footer>
+    SleeperTools &copy; 2025
+</footer>
 </body>
 </html>

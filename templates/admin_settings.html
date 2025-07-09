@@ -3,62 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>League Login</title>
     <title>Admin Settings - {{ league_name }}</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 30px auto;
-            padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-        }
-        h1 {
-            text-align: center;
-        }
-        label {
-            font-weight: bold;
-        }
-        input[type="text"],
-        input[type="password"] {
-            width: 100%;
-            padding: 8px;
-            margin: 8px 0 16px 0;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        button {
-            background-color: #1976D2;
-            color: white;
-            padding: 10px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #1565C0;
-        }
-        .flash {
-            padding: 10px;
-            margin-bottom: 16px;
-            border-radius: 4px;
-        }
-        .flash.success {
-            background-color: #C8E6C9;
-            color: #256029;
-        }
-        .flash.error {
-            background-color: #FFCDD2;
-            color: #C62828;
-        }
-        .section {
-            margin-top: 30px;
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-
+<div class="container">
     <h1>Admin Settings for {{ league_name }}</h1>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -72,7 +21,6 @@
     <form method="POST">
         <label for="league_id">Sleeper League ID:</label>
         <input type="text" name="league_id" value="{{ config.league_id }}" placeholder="e.g. 123456789012345678" required>
-
         <button type="submit">Save</button>
     </form>
 
@@ -83,23 +31,29 @@
     </div>
 
     <div class="section">
-        <a href="{{ url_for('league_summary', league_name=league_name) }}">← Back to League Summary</a> |
-        <a href="{{ url_for('logout') }}">Logout</a>
+        <a href="{{ url_for('league_summary', league_name=league_name) }}">← To League Summary ---</a> |
+        <a href="{{ url_for('league_totals', league_name=league_name) }}">--- To League Totals →</a> |
+        <a href="{{ url_for('logout') }}">Logout</a> |
     </div>
 
     <hr>
-    <h3>🧩 Unmatched Sleeper Player IDs (from this league)</h3>
-    {% if unmatched_ids %}
-        <ul style="column-count: 2; max-height: 300px; overflow-y: auto;">
-            {% for pid in unmatched_ids %}
-                <li>{{ pid }}</li>
-            {% endfor %}
+
+    <div class="section">
+        <h3>🔧 Admin Tools</h3>
+        <ul>
+            <li>
+                <a href="{{ url_for('unmatched_players', league_name=league_name) }}">
+                    🧩 {{ unmatched_count }} Unmatched Players (likely not on any Spotrac team)
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('theme_selector', league_name=league_name) }}">
+                    🎨 Assign Team Themes
+                </a>
+            </li>
         </ul>
-    {% else %}
-        <p>All players matched or no data available.</p>
-    {% endif %}
-
-
-
+    </div>
+</div>
 </body>
 </html>
+

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unmatched Players - {{ league_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+    <h1>🧩 Unmatched Players in {{ league_name }}</h1>
+    <p>These players are rostered in Sleeper but were not matched to any Spotrac record. Likely not on a team in the current or past salary data.</p>
+
+    {% if unmatched_players %}
+    <table>
+        <tr>
+            <th>Player ID</th>
+            <th>Name</th>
+            <th>Age</th>
+            <th>Position</th>
+        </tr>
+        {% for player in unmatched_players %}
+        <tr>
+            <td>{{ player.player_id }}</td>
+            <td>{{ player.sleeper_name }}</td>
+            <td>{{ player.age }}</td>
+            <td>{{ player.position }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+        <p>No unmatched players found.</p>
+    {% endif %}
+
+    <hr>
+    <a href="{{ url_for('admin_tools', league_name=league_name) }}">← Back to Admin Tools</a>
+</div>
+</body>
+</html>
