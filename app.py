@@ -272,7 +272,7 @@ def login():
         session["league_name"] = name
         session["is_admin"] = (admin_pw == league.get("admin_password"))
 
-        # ✅ Fetch Sleeper player database ONCE and store in cache
+        # ✅ Cache Sleeper players
         try:
             if not SLEEPER_CACHE.get("players"):
                 resp = requests.get("https://api.sleeper.app/v1/players/nfl")
@@ -284,26 +284,37 @@ def login():
             flash(f"Error caching Sleeper players: {str(e)}", "error")
             return redirect(url_for("login"))
 
-        # ✅ Save users & rosters to Google Sheet at login
+        # ✅ Check league_id logic
         league_id = league.get("league_id")
         if not league_id:
-            flash("❌ This league does not have a League ID configured yet.", "error")
-            return redirect(url_for("login"))
-        if league_id:
-            try:
-                users = get_league_users(league_id)
-                rosters = get_league_rosters(league_id)
-                save_league_session_to_sheet(league_id, users, rosters)
-            except Exception as e:
-                flash(f"Failed to fetch and save league data: {str(e)}", "error")
+            if session["is_admin"]:
+                flash("⚠️ This league does not have a League ID configured yet. Please update it.", "warning")
+                return redirect(url_for("admin_page", league_name=name))
+            else:
+                flash("❌ This league is not set up yet. Please contact the Commissioner.", "error")
                 return redirect(url_for("login"))
 
+        # ✅ Fetch league data from Sleeper
+        try:
+            users = get_league_users(league_id)
+            rosters = get_league_rosters(league_id)
+            save_league_session_to_sheet(league_id, users, rosters)
+        except Exception as e:
+            if session["is_admin"]:
+                flash(f"⚠️ League ID appears invalid or inaccessible: {str(e)}", "warning")
+                return redirect(url_for("admin_page", league_name=name))
+            else:
+                flash("❌ There was an issue accessing this league. Please contact the Commissioner.", "error")
+                return redirect(url_for("login"))
+
+        # ✅ Redirect after login
         if session["is_admin"]:
             return redirect(url_for("admin_page", league_name=name))
         else:
             return redirect(url_for("league_totals", league_name=name))
 
     return render_template("login.html")
+
 
 
 ## --- Logout ---
