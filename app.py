@@ -1,17 +1,17 @@
+# ======================== Imports ========================
 import json
 import os
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+from datetime import datetime
 import pandas as pd
 import requests
-from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, session, flash, g
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
-app = Flask(__name__,
-            static_folder='static',
-            template_folder='templates')
-app.secret_key = "supersecret"  # Needed for flashing messages
 
+# ======================== Flask App Setup ========================
+app = Flask(__name__, static_folder='static', template_folder='templates')
+app.secret_key = "supersecret" # Needed for flashing messages
 
 if os.environ.get("RENDER") == "true":
     SERVICE_ACCOUNT_FILE = "nfl-stats-ff-00a13e9db7db.json"
@@ -22,6 +22,7 @@ SPREADSHEET_ID = "1fm6o9HFT48F1AG0A5f4te3BDK8PHVnxksUVjWTDSCiI"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 
+# ======================== Utility Functions ========================
 def get_service():
     creds = service_account.Credentials.from_service_account_file(
         SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -32,6 +33,19 @@ def load_flattened_salary_data():
     df["player_id"] = df["player_id"].astype(str).str.strip()
     return df
 
+def get_league_rosters(league_id):
+    url = f"https://api.sleeper.app/v1/league/{league_id}/rosters"
+    resp = requests.get(url)
+    if resp.status_code != 200:
+        raise Exception(f"Failed to fetch rosters: {resp.text}")
+    return resp.json()
+
+def get_league_users(league_id):
+    url = f"https://api.sleeper.app/v1/league/{league_id}/users"
+    resp = requests.get(url)
+    if resp.status_code != 200:
+        raise Exception(f"Failed to fetch users: {resp.text}")
+    return resp.json()
 
 def load_all_leagues():
     service = get_service()
@@ -41,11 +55,10 @@ def load_all_leagues():
         range="config!A2:E"
     ).execute()
     values = result.get('values', [])
-
     leagues = {}
     for row in values:
         if len(row) < 4:
-            continue  # Skip incomplete rows
+            continue
         league_name = row[0]
         leagues[league_name] = {
             "password": row[1],
@@ -60,6 +73,149 @@ def load_all_leagues():
                 leagues[league_name]["themes"] = {}
     return leagues
 
+def save_new_league_to_google_sheet(league_name, password, admin_password, league_id):
+    service = get_service()
+    sheet = service.spreadsheets()
+    values = [[
+        league_name.strip(),
+        password.strip(),
+        admin_password.strip(),
+        league_id.strip(),
+        json.dumps({})
+    ]]
+    body = {"values": values}
+    sheet.values().append(
+        spreadsheetId=SPREADSHEET_ID,
+        range="config!A2",
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body=body
+    ).execute()
+
+def update_league_config(league_name, field, value):
+    service = get_service()
+    sheet = service.spreadsheets()
+    result = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range="config!A2:A"
+    ).execute()
+    league_names = [row[0] for row in result.get("values", [])]
+    if league_name not in league_names:
+        return False
+    row_index = league_names.index(league_name) + 2
+    col_map = {
+        "password": "B",
+        "admin_password": "C",
+        "league_id": "D",
+        "themes": "E"
+    }
+    if field == "themes":
+        value = json.dumps(value)
+    range_ = f"config!{col_map[field]}{row_index}"
+    sheet.values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=range_,
+        valueInputOption="RAW",
+        body={"values": [[value]]}
+    ).execute()
+    return True
+
+def save_league_session_to_sheet(league_id, users, rosters):
+    service = get_service()
+    sheets_api = service.spreadsheets()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Step 1: Get list of sheet tabs
+    metadata = sheets_api.get(spreadsheetId=SPREADSHEET_ID).execute()
+    sheet_titles = [s["properties"]["title"] for s in metadata["sheets"]]
+
+    # Step 2: Create the sheet if missing
+    if str(league_id) not in sheet_titles:
+        sheets_api.batchUpdate(
+            spreadsheetId=SPREADSHEET_ID,
+            body={
+                "requests": [
+                    {
+                        "addSheet": {
+                            "properties": {"title": str(league_id)}
+                        }
+                    }
+                ]
+            }
+        ).execute()
+
+    # Step 3: Clear sheet contents before writing
+    sheets_api.values().clear(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{league_id}!A1:Z1000"
+    ).execute()
+
+    # Step 4: Build and write rows
+    rows = [["Timestamp", timestamp], ["League ID", league_id], [], ["USERS"]]
+    for user in users:
+        rows.append([
+            user.get("user_id", ""),
+            user.get("display_name", ""),
+            user.get("metadata", {}).get("team_name", "")
+        ])
+    rows.append([])
+    rows.append(["ROSTERS"])
+    for r in rosters:
+        players = ", ".join(r.get("players", [])) if r.get("players") else ""
+        starters = ", ".join(r.get("starters", [])) if r.get("starters") else ""
+        rows.append([
+            r.get("owner_id", ""),
+            players,
+            starters
+        ])
+
+    sheets_api.values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{league_id}!A1",
+        valueInputOption="RAW",
+        body={"values": rows}
+    ).execute()
+
+
+def load_users_and_rosters_from_sheet(league_id):
+    service = get_service()
+    sheet = service.spreadsheets().values()
+
+    data = sheet.get(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{league_id}!A1:Z1000"
+    ).execute().get("values", [])
+
+    users = []
+    rosters = []
+    section = None
+    for row in data:
+        if not row:
+            continue
+        if row[0] == "USERS":
+            section = "users"
+            continue
+        elif row[0] == "ROSTERS":
+            section = "rosters"
+            continue
+        if section == "users" and len(row) >= 2:
+            users.append({
+                "user_id": row[0],
+                "display_name": row[1],
+                "metadata": {"team_name": row[2] if len(row) > 2 else ""}
+            })
+        elif section == "rosters" and len(row) >= 3:
+            rosters.append({
+                "owner_id": row[0],
+                "players": row[1].split(", ") if row[1] else [],
+                "starters": row[2].split(", ") if row[2] else []
+            })
+
+    return users, rosters
+
+
+# ======================== Global Constants ========================
+SLEEPER_CACHE = {}
 
 TEAM_THEME_DATA = {
     "ARI": {"name": "Arizona Cardinals", "color": "#97233F", "logo": "ARI.png"},
@@ -97,7 +253,9 @@ TEAM_THEME_DATA = {
 }
 
 
+# ======================== Routes ========================
 
+## --- Login ---
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -114,6 +272,32 @@ def login():
         session["league_name"] = name
         session["is_admin"] = (admin_pw == league.get("admin_password"))
 
+        # ✅ Fetch Sleeper player database ONCE and store in cache
+        try:
+            if not SLEEPER_CACHE.get("players"):
+                resp = requests.get("https://api.sleeper.app/v1/players/nfl")
+                if resp.status_code == 200:
+                    SLEEPER_CACHE["players"] = resp.json()
+                else:
+                    raise Exception("Failed to fetch Sleeper player data.")
+        except Exception as e:
+            flash(f"Error caching Sleeper players: {str(e)}", "error")
+            return redirect(url_for("login"))
+
+        # ✅ Save users & rosters to Google Sheet at login
+        league_id = league.get("league_id")
+        if not league_id:
+            flash("❌ This league does not have a League ID configured yet.", "error")
+            return redirect(url_for("login"))
+        if league_id:
+            try:
+                users = get_league_users(league_id)
+                rosters = get_league_rosters(league_id)
+                save_league_session_to_sheet(league_id, users, rosters)
+            except Exception as e:
+                flash(f"Failed to fetch and save league data: {str(e)}", "error")
+                return redirect(url_for("login"))
+
         if session["is_admin"]:
             return redirect(url_for("admin_page", league_name=name))
         else:
@@ -122,14 +306,51 @@ def login():
     return render_template("login.html")
 
 
-def get_league_rosters(league_id):
-    url = f"https://api.sleeper.app/v1/league/{league_id}/rosters"
-    resp = requests.get(url)
-    if resp.status_code != 200:
-        raise Exception(f"Failed to fetch rosters: {resp.text}")
-    return resp.json()
+## --- Logout ---
+@app.route("/logout")
+def logout():
+    session.clear()
+    SLEEPER_CACHE.clear()  # Clear the Sleeper cache too
+    flash("You have been logged out.", "success")
+    return redirect(url_for("login"))
 
 
+
+## --- Root Redirect ---
+@app.route("/")
+def root():
+    return redirect(url_for("login"))
+
+## --- League Creation ---
+@app.route("/create-league", methods=["GET", "POST"])
+def create_league():
+    if request.method == "POST":
+        league_name = request.form.get("league_name", "").strip()
+        password = request.form.get("league_password", "").strip()
+
+        admin_password = request.form.get("admin_password", "").strip()
+        league_id = request.form.get("league_id", "").strip()
+
+        if not league_name or not password:
+            flash("League name and password are required.", "error")
+            return redirect(url_for("create_league"))
+
+        leagues = load_all_leagues()
+        if league_name in leagues:
+            flash("❌ A league with that name already exists.", "error")
+            return redirect(url_for("create_league"))
+
+        try:
+            save_new_league_to_google_sheet(league_name, password, admin_password, league_id)
+            flash("✅ League created! You can now log in.", "success")
+            return redirect(url_for("login"))
+        except Exception as e:
+            flash(f"❌ Error saving league: {str(e)}", "error")
+            return redirect(url_for("create_league"))
+
+    return render_template("create_league.html")
+
+## --- League Summary Page ---
 @app.route("/league/<league_name>")
 def league_summary(league_name):
     leagues = load_all_leagues()
@@ -140,18 +361,18 @@ def league_summary(league_name):
     league_id = config.get("league_id")
     if not league_id:
         return "❌ League ID not set. Admin must configure it."
+    if not SLEEPER_CACHE.get("players"):
+        return "❌ Sleeper cache not loaded. Please log in again."
 
     try:
         df = load_flattened_salary_data()
-
         current_year = datetime.now().year
         next_year = current_year + 1
         prev_year = current_year - 1
 
-        print(f"🔎 current year= {current_year}")
+        #print(f"🔎 current year= {current_year}")
         # Fetch Sleeper player database once
-        sleeper_url = "https://api.sleeper.app/v1/players/nfl"
-        sleeper_data = requests.get(sleeper_url).json()
+        sleeper_data = SLEEPER_CACHE.get("players", {})
 
         # Convert to quick lookup
         sleeper_lookup = {
@@ -164,26 +385,30 @@ def league_summary(league_name):
             for player in sleeper_data.values() if player.get("player_id")
         }
 
-        rosters = get_league_rosters(league_id)
+        
         team_data = []
         # Fetch display names
-        users_url = f"https://api.sleeper.app/v1/league/{league_id}/users"
-        users_resp = requests.get(users_url)
-        users = users_resp.json()
+        users, rosters = load_users_and_rosters_from_sheet(league_id)
 
         # Create lookup: user_id → display_name
-        user_lookup = {
-            user["user_id"]: user.get("display_name",
-                                      f"User {user['user_id']}")
-            for user in users
-        }
-        team_lookup = {
-            user["user_id"]:
-            user.get("metadata", {}).get(
-                "team_name", user.get("display_name",
-                                      f"User {user['user_id']}"))
-            for user in users
-        }
+        user_lookup = {}
+        team_lookup = {}
+
+        for user in users:
+            uid = user.get("user_id", "")
+            display = user.get("display_name", f"User {uid}").strip()
+            team_name = user.get("metadata", {}).get("team_name", "").strip()
+
+            user_lookup[uid] = display
+            team_lookup[uid] = team_name if team_name else display
+
+            #print("LOOKUPS1:")
+            #for uid in team_lookup:
+                #print(f"{uid}: {team_lookup[uid]}")
+
+
+
+
 
         for roster in rosters:
             user_id = roster.get("owner_id")
@@ -323,160 +548,9 @@ def league_summary(league_name):
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
-def save_new_league_to_google_sheet(league_name, password, admin_password, league_id):
-    service = get_service()
-    sheet = service.spreadsheets()
-
-    values = [[
-        league_name.strip(),
-        password.strip(),
-        admin_password.strip(),
-        league_id.strip(),
-        json.dumps({})  # empty themes
-    ]]
-
-    body = {"values": values}
-    sheet.values().append(
-        spreadsheetId=SPREADSHEET_ID,
-        range="config!A2",  # assumes row 1 is header
-        valueInputOption="RAW",
-        insertDataOption="INSERT_ROWS",
-        body=body
-    ).execute()
-
-@app.route("/create-league", methods=["GET", "POST"])
-def create_league():
-    if request.method == "POST":
-        league_name = request.form.get("league_name", "").strip()
-        password = request.form.get("league_password", "").strip()
-
-        admin_password = request.form.get("admin_password", "").strip()
-        league_id = request.form.get("league_id", "").strip()
-
-        if not league_name or not password:
-            flash("League name and password are required.", "error")
-            return redirect(url_for("create_league"))
-
-        leagues = load_all_leagues()
-        if league_name in leagues:
-            flash("❌ A league with that name already exists.", "error")
-            return redirect(url_for("create_league"))
-
-        try:
-            save_new_league_to_google_sheet(league_name, password, admin_password, league_id)
-            flash("✅ League created! You can now log in.", "success")
-            return redirect(url_for("login"))
-        except Exception as e:
-            flash(f"❌ Error saving league: {str(e)}", "error")
-            return redirect(url_for("create_league"))
-
-    return render_template("create_league.html")
 
 
-
-
-def update_league_config(league_name, field, value):
-    service = get_service()
-    sheet = service.spreadsheets()
-
-    # Find the row for the league
-    result = sheet.values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range="config!A2:A"
-    ).execute()
-    league_names = [row[0] for row in result.get("values", [])]
-
-    if league_name not in league_names:
-        return False  # League not found
-
-    row_index = league_names.index(league_name) + 2  # 1-based + header
-
-    col_map = {
-        "password": "B",
-        "admin_password": "C",
-        "league_id": "D",
-        "themes": "E"
-    }
-    if field == "themes":
-        value = json.dumps(value)
-
-    range_ = f"config!{col_map[field]}{row_index}"
-    sheet.values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=range_,
-        valueInputOption="RAW",
-        body={"values": [[value]]}
-    ).execute()
-    return True
-
-
-@app.route("/admin/<league_name>", methods=["GET", "POST"])
-def admin_page(league_name):
-    leagues = load_all_leagues()
-    if not session.get("is_admin") or session.get("league_name") != league_name:
-        return "🔒 Access denied."
-
-    if request.method == "POST":
-        league_id = request.form.get("league_id", "").strip()
-        update_league_config(league_name, "themes", themes)
-
-        flash("✅ League ID updated.", "success")
-        return redirect(url_for("admin_page", league_name=league_name))
-
-    config = leagues[league_name]
-    themes = config.get("themes", {})
-
-
-    unmatched_count = 0
-    try:
-        df = load_flattened_salary_data()
-        df["player_id"] = df["player_id"].astype(str).str.strip()
-
-        league_id = config.get("league_id")
-        rosters = get_league_rosters(league_id)
-
-        all_ids = set()
-        for roster in rosters:
-            starters = roster.get("starters", [])
-            players = roster.get("players", [])
-            ids = [str(pid) for pid in (starters + players) if str(pid) != "0"]
-            all_ids.update(ids)
-
-        matched_ids = set(df["player_id"])
-        unmatched_count = len(all_ids - matched_ids)
-
-    except:
-        unmatched_count = 0  # Fail silently
-
-    return render_template("admin_settings.html",
-                           config=config,
-                           league_name=league_name,
-                           unmatched_count=unmatched_count)
-
-
-
-SLEEPER_CACHE = {}
-
-def get_sleeper_players():
-    """Cache the player DB in memory, not in session."""
-    if not SLEEPER_CACHE.get("players"):
-        resp = requests.get("https://api.sleeper.app/v1/players/nfl")
-        if resp.status_code == 200:
-            SLEEPER_CACHE["players"] = resp.json()
-        else:
-            raise Exception("Failed to fetch Sleeper player data.")
-    return SLEEPER_CACHE["players"]
-
-def get_league_users(league_id):
-    """Fetch users from a Sleeper league."""
-    url = f"https://api.sleeper.app/v1/league/{league_id}/users"
-    resp = requests.get(url)
-    if resp.status_code != 200:
-        raise Exception(f"Failed to fetch users: {resp.text}")
-    return resp.json()
-
-
-
+## --- League Totals Page ---
 @app.route("/league/<league_name>/totals")
 def league_totals(league_name):
     leagues = load_all_leagues()
@@ -494,19 +568,27 @@ def league_totals(league_name):
 
         current_year = datetime.now().year
         prev_year = current_year - 1
-        next_year = current_year + 1
 
-        rosters = get_league_rosters(league_id)
-        users = requests.get(
-            f"https://api.sleeper.app/v1/league/{league_id}/users").json()
+        # AFTER
+        users, rosters = load_users_and_rosters_from_sheet(league_id)
+        user_lookup = {}
+        team_lookup = {}
 
-        team_lookup = {
-            user["user_id"]:
-            user.get("metadata", {}).get(
-                "team_name", user.get("display_name",
-                                      f"User {user['user_id']}"))
-            for user in users
-        }
+        for user in users:
+            uid = user.get("user_id", "")
+            display = user.get("display_name", f"User {uid}").strip()
+            team_name = user.get("metadata", {}).get("team_name", "").strip()
+
+            user_lookup[uid] = display
+            team_lookup[uid] = team_name if team_name else display
+
+            # print("LOOKUPS2:")
+            # for uid in team_lookup:
+            #     print(f"{uid}: {team_lookup[uid]}")
+            # print("Name")
+            # for uid in team_lookup:
+            #     print(f"{uid}: {display}")
+
 
         team_caps = []
         for roster in rosters:
@@ -543,8 +625,7 @@ def league_totals(league_name):
             team_caps.append({
                 "user_id":
                 user_id,
-                "team_name":
-                team_lookup.get(user_id, f"User {user_id}"),
+                "team_name": team_lookup.get(user_id, user_lookup.get(user_id, f"User {user_id}")),
                 "total_cap":
                 f"${total_cap:,.0f}"
             })
@@ -556,7 +637,7 @@ def league_totals(league_name):
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
-
+## --- Team Detail Page ---
 @app.route("/league/<league_name>/team/<user_id>")
 def team_detail(league_name, user_id):
     leagues = load_all_leagues()
@@ -576,12 +657,12 @@ def team_detail(league_name, user_id):
         prev_year = current_year - 1
         next_year = current_year + 1
 
-        rosters = get_league_rosters(league_id)
-        users = requests.get(
-            f"https://api.sleeper.app/v1/league/{league_id}/users").json()
 
-        sleeper_data = requests.get(
-            "https://api.sleeper.app/v1/players/nfl").json()
+        users, rosters = load_users_and_rosters_from_sheet(league_id)
+
+
+        sleeper_data = SLEEPER_CACHE.get("players", {})
+
         sleeper_lookup = {
             str(p.get("player_id")): {
                 "full_name": p.get("full_name", "Unknown"),
@@ -592,13 +673,22 @@ def team_detail(league_name, user_id):
             for p in sleeper_data.values() if p.get("player_id")
         }
 
-        team_lookup = {
-            user["user_id"]:
-            user.get("metadata", {}).get(
-                "team_name", user.get("display_name",
-                                      f"User {user['user_id']}"))
-            for user in users
-        }
+        user_lookup = {}
+        team_lookup = {}
+
+        for user in users:
+            uid = user.get("user_id", "")
+            display = user.get("display_name", f"User {uid}").strip()
+            team_name = user.get("metadata", {}).get("team_name", "").strip()
+
+            user_lookup[uid] = display
+            team_lookup[uid] = team_name if team_name else display
+
+            # print("LOOKUPS3:")
+            # for uid in team_lookup:
+            #     print(f"{uid}: {team_lookup[uid]}")
+
+
 
         display_name = team_lookup.get(user_id, f"User {user_id}")
 
@@ -680,12 +770,6 @@ def team_detail(league_name, user_id):
         themed_team_abbr = next((abbr for abbr, uid in themes.items() if uid == user_id), None)
         theme_info = TEAM_THEME_DATA.get(themed_team_abbr)
 
-# You already have `display_name` from user lookup earlier
-
-
-
-
-
         return render_template(
             "team_detail.html",
             league_name=league_name,
@@ -705,6 +789,54 @@ def team_detail(league_name, user_id):
     except Exception as e:
         return f"❌ Error: {str(e)}"
     
+
+## --- Admin Settings Page ---
+@app.route("/admin/<league_name>", methods=["GET", "POST"])
+def admin_page(league_name):
+    leagues = load_all_leagues()
+    if not session.get("is_admin") or session.get("league_name") != league_name:
+        return "🔒 Access denied."
+
+    if request.method == "POST":
+        league_id = request.form.get("league_id", "").strip()
+        update_league_config(league_name, "themes", themes)
+
+        flash("✅ League ID updated.", "success")
+        return redirect(url_for("admin_page", league_name=league_name))
+
+    config = leagues[league_name]
+    themes = config.get("themes", {})
+
+
+    unmatched_count = 0
+    try:
+        df = load_flattened_salary_data()
+        df["player_id"] = df["player_id"].astype(str).str.strip()
+
+        league_id = config.get("league_id")
+        _, rosters = load_users_and_rosters_from_sheet(league_id)
+
+
+        all_ids = set()
+        for roster in rosters:
+            starters = roster.get("starters", [])
+            players = roster.get("players", [])
+            ids = [str(pid) for pid in (starters + players) if str(pid) != "0"]
+            all_ids.update(ids)
+
+        matched_ids = set(df["player_id"])
+        unmatched_count = len(all_ids - matched_ids)
+
+    except:
+        unmatched_count = 0  # Fail silently
+
+    return render_template("admin_settings.html",
+                           config=config,
+                           league_name=league_name,
+                           unmatched_count=unmatched_count)
+
+
+## --- Admin Unmatched Players ---
 @app.route("/admin/<league_name>/unmatched")
 def unmatched_players(league_name):
     leagues = load_all_leagues()
@@ -720,7 +852,8 @@ def unmatched_players(league_name):
         matched_ids = set(df["player_id"])
 
         league_id = config.get("league_id")
-        rosters = get_league_rosters(league_id)
+        _, rosters = load_users_and_rosters_from_sheet(league_id)
+
 
         all_ids = set()
         for r in rosters:
@@ -731,7 +864,7 @@ def unmatched_players(league_name):
 
         unmatched_ids = sorted(all_ids - matched_ids)
 
-        all_players = get_sleeper_players()  # Cached API call
+        all_players = SLEEPER_CACHE.get("players", {}) # Cached API call
 
         for pid in unmatched_ids:
             player = all_players.get(pid)
@@ -757,7 +890,7 @@ def unmatched_players(league_name):
                            league_name=league_name,
                            unmatched_players=unmatched_players)
 
-    
+## --- Admin Theme Selector ---
 @app.route("/admin/<league_name>/themes", methods=["GET", "POST"])
 def theme_selector(league_name):
     leagues = load_all_leagues()
@@ -773,7 +906,7 @@ def theme_selector(league_name):
     # Load users from league
     users = []
     try:
-        raw_users = get_league_users(league_id)
+        raw_users, _ = load_users_and_rosters_from_sheet(league_id)
         users = []
         for u in raw_users:
             display_name = u.get("display_name", f"User {u.get('user_id')}")
@@ -816,18 +949,7 @@ def theme_selector(league_name):
                            assigned_users=assigned_users)
 
 
-@app.route("/logout")
-def logout():
-    session.clear()
-    flash("You have been logged out.", "success")
-    return redirect(url_for("login"))
-
-
-@app.route("/")
-def root():
-    return redirect(url_for("login"))
-
-
+# ======================== App Runner ========================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=True, host="0.0.0.0", port=port)
