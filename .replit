@@ -1,0 +1,43 @@
+entrypoint = "app.py"
+modules = ["python-3.11"]
+
+[nix]
+channel = "stable-24_05"
+packages = ["cacert", "glibcLocales", "grpc"]
+
+[unitTest]
+language = "python3"
+
+[gitHubImport]
+requiredFiles = [".replit", "replit.nix"]
+
+
+[interpreter]
+command = ["python3"]
+
+[run]
+command = "python3 app.py"
+
+[deployment]
+run = ["python3", "main.py"]
+deploymentTarget = "cloudrun"
+
+[workflows]
+runButton = "Run App"
+
+[[workflows.workflow]]
+name = "Run App"
+mode = "sequential"
+author = 44725056
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pip install flask"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python app.py"
+
+[[ports]]
+localPort = 5000
+externalPort = 80

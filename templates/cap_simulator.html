@@ -43,8 +43,9 @@
         <h5>Add Players</h5>
         <input type="text" id="playerSearch" placeholder="Type a player name..." />
         <div id="suggestions" class="search-suggestions"></div>
-        <select id="teamFilter"><option value="">Filter by Team</option></select>
-        <select id="posFilter"><option value="">Filter by Position</option></select>
+          <select id="teamFilter" onchange="searchPlayer()"><option value="">Filter by Team</option></select>
+          <select id="posFilter" onchange="searchPlayer()"><option value="">Filter by Position</option></select>
+
         <button onclick="searchPlayer()" class="btn mt-2">Add Player</button>
         <ul id="addedPlayers" class="player-list"></ul>
       </div>
@@ -97,59 +98,70 @@
         document.getElementById("activePlayers").appendChild(li);
     }
 
-    function searchPlayer() {
-        const input = document.getElementById("playerSearch").value.trim().toLowerCase();
-        const suggestionsBox = document.getElementById("suggestions");
-        suggestionsBox.innerHTML = "";
+      function searchPlayer() {
+          const input = document.getElementById("playerSearch").value.trim().toLowerCase();
+          const selectedTeam = document.getElementById("teamFilter").value;
+          const selectedPos = document.getElementById("posFilter").value;
+          const suggestionsBox = document.getElementById("suggestions");
+          suggestionsBox.innerHTML = "";
 
-        if (!input) return;
-        console.log("input:", input)
-        console.log("object.entries", Object.entries(idMap))
-        const matches = Object.entries(idMap).filter(([name]) =>
-            name.toLowerCase().includes(input)
-        );
-        
-        console.log("matches:", matches)
-        if (matches.length === 0) {
-            suggestionsBox.innerHTML = `<p>No matches found.</p>`;
-            return;
-        }
+          if (!input) return;
 
-        // Flatten results to array of player objects
-        const allPlayers = matches.flatMap(([_, players]) => players);
-        console.log("allPlayers:", allPlayers)
+          const matches = Object.entries(idMap).filter(([name, players]) => {
+              const nameMatch = name.toLowerCase().includes(input);
+              const teamMatch = (player) => !selectedTeam || player.team === selectedTeam;
+              const posMatch = (player) => !selectedPos || player.position === selectedPos;
 
-        if (allPlayers.length === 1) {
-            addPlayerToList(allPlayers[0]);
-            document.getElementById("playerSearch").value = "";
-            return;
-        }
+              // At least one matching player in this group must match all filters
+              return nameMatch && players.some(player => teamMatch(player) && posMatch(player));
+          });
 
-        // Multiple matches — show options
-        suggestionsBox.innerHTML = `<p>Select a player:</p>`;
-        const list = document.createElement("ul");
-        list.className = "search-results";
-        allPlayers.forEach(player => {
-            const li = document.createElement("li");
-            const btn = document.createElement("button");
-            btn.className = "btn btn-link";
-            btn.innerHTML = `
-                <strong>${player.full_name}</strong> – ${player.team || "No Team"}<br>
-                <small>${player.position}, Age ${player.age}</small>
-            `;
-            btn.onclick = () => {
-                addPlayerToList(player);
-                document.getElementById("playerSearch").value = "";
-                document.getElementById("suggestions").innerHTML = "";
-            };
-            li.appendChild(btn);
-            list.appendChild(li);
-        });
-        suggestionsBox.appendChild(list);
-    }
+          if (matches.length === 0) {
+              suggestionsBox.innerHTML = `<p>No matches found.</p>`;
+              return;
+          }
+
+          const allPlayers = matches.flatMap(([_, players]) =>
+              players.filter(player =>
+                  (!selectedTeam || player.team === selectedTeam) &&
+                  (!selectedPos || player.position === selectedPos)
+              )
+          );
+
+          if (allPlayers.length === 1) {
+              addPlayerToList(allPlayers[0]);
+              document.getElementById("playerSearch").value = "";
+              return;
+          }
+
+          // Multiple matches — show options
+          suggestionsBox.innerHTML = `<p>Select a player:</p>`;
+          const list = document.createElement("ul");
+          list.className = "search-results";
+          allPlayers.forEach(player => {
+              const li = document.createElement("li");
+              const btn = document.createElement("button");
+              btn.className = "btn btn-link";
+              btn.innerHTML = `
+                  <strong>${player.full_name}</strong> – ${player.team || "No Team"}<br>
+                  <small>${player.position}, Age ${player.age}</small>
+                  <small>${player.cap_str || "$5,000,000"}</small>
+              `;
+              btn.onclick = () => {
+                  addPlayerToList(player);
+                  document.getElementById("playerSearch").value = "";
+                  document.getElementById("suggestions").innerHTML = "";
+              };
+              li.appendChild(btn);
+              list.appendChild(li);
+          });
+          suggestionsBox.appendChild(list);
+      }
+
 
     function addPlayerToList(data) {
-        const cap = 5000000;
+        const cap = data.cap_num || 5000000;
+        const capStr = data.cap_str || "$5,000,000";
         totalCap += cap;
         updateCapDisplay();
 
@@ -160,7 +172,7 @@
         li.innerHTML = `
             <div class="player-card-row">
                 <div><strong>${data.full_name}</strong> – ${data.team || "No Team"}<br>
-                <small>${data.position}, ${data.age} — $5,000,000 🔁</small></div>
+                <small>${data.position}, ${data.age} — ${capStr} 🔁</small>
                 <button class="btn btn-remove">Remove</button>
             </div>
         `;
