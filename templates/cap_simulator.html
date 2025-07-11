@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cap Room Simulator – {{ team_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="/static/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <h2>{{ team_name }} – Cap Room Simulator</h2>
+    <p class="text-muted">* Unmatched players are assigned a default cap hit of $5,000,000.</p>
+
+    <h4>Total Cap: <span id="totalCap">{{ total_cap }}</span></h4>
+    <button onclick="resetAll()" class="btn">Reset All</button>
+
+    <div class="simulator-grid">
+      <div class="simulator-column">
+        <h5>Active Players</h5>
+        <ul id="activePlayers" class="player-list">
+          {% for player in players %}
+          <li data-id="{{ player.player_id }}" data-cap="{{ player.cap_num }}" data-team="{{ player.Team }}" data-pos="{{ player.Pos }}" class="player-card">
+            <div class="player-card-row">
+                <div>
+                    <strong>{{ player.Player }}</strong> – {{ player.Team }}<br>
+                    <small>{{ player.Pos }}, {{ player.Age }} — {{ player.Cap_Hit }}</small>
+                </div>
+                <div class="button-wrap">
+                    <button class="btn btn-remove" onclick="removePlayer(this)">Remove</button>
+                </div>
+                </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="simulator-column">
+        <h5>Removed Players</h5>
+        <ul id="removedPlayers" class="player-list"></ul>
+      </div>
+
+      <div class="simulator-column">
+        <h5>Add Players</h5>
+        <input type="text" id="playerSearch" placeholder="Type a player name..." />
+        <div id="suggestions" class="search-suggestions"></div>
+        <select id="teamFilter"><option value="">Filter by Team</option></select>
+        <select id="posFilter"><option value="">Filter by Position</option></select>
+        <button onclick="searchPlayer()" class="btn mt-2">Add Player</button>
+        <ul id="addedPlayers" class="player-list"></ul>
+      </div>
+    </div>
+  </div>
+  <script>
+    let totalCap = parseFloat("{{ total_cap|replace('$','')|replace(',','') }}");
+    const playerDB = {{ sleeper_data | tojson }};
+    const existingIDs = new Set({{ player_ids | tojson }});
+
+    // Build name → list of players map
+    const idMap = {};
+    for (const [id, data] of Object.entries(playerDB)) {
+        const name = data.full_name;
+        if (typeof name === "string" && name.trim() && !existingIDs.has(id)) {
+            if (!idMap[name]) idMap[name] = [];
+            idMap[name].push({ id, ...data });
+        }
+    }
+
+    function updateCapDisplay() {
+        document.getElementById("totalCap").textContent = "$" + totalCap.toLocaleString();
+    }
+
+    function removePlayer(button) {
+        const li = button.closest("li");
+        const cap = parseFloat(li.dataset.cap);
+        totalCap -= cap;
+        updateCapDisplay();
+
+        button.remove();
+        const restore = document.createElement("button");
+        restore.textContent = "Add Back";
+        restore.className = "btn btn-restore";
+        restore.onclick = () => addBackPlayer(li, cap);
+        li.appendChild(restore);
+        document.getElementById("removedPlayers").appendChild(li);
+    }
+
+    function addBackPlayer(li, cap) {
+        totalCap += cap;
+        updateCapDisplay();
+
+        li.querySelector("button").remove();
+        const remove = document.createElement("button");
+        remove.textContent = "Remove";
+        remove.className = "btn btn-remove";
+        remove.onclick = () => removePlayer(remove);
+        li.appendChild(remove);
+        document.getElementById("activePlayers").appendChild(li);
+    }
+
+    function searchPlayer() {
+        const input = document.getElementById("playerSearch").value.trim().toLowerCase();
+        const suggestionsBox = document.getElementById("suggestions");
+        suggestionsBox.innerHTML = "";
+
+        if (!input) return;
+        console.log("input:", input)
+        console.log("object.entries", Object.entries(idMap))
+        const matches = Object.entries(idMap).filter(([name]) =>
+            name.toLowerCase().includes(input)
+        );
+        
+        console.log("matches:", matches)
+        if (matches.length === 0) {
+            suggestionsBox.innerHTML = `<p>No matches found.</p>`;
+            return;
+        }
+
+        // Flatten results to array of player objects
+        const allPlayers = matches.flatMap(([_, players]) => players);
+        console.log("allPlayers:", allPlayers)
+
+        if (allPlayers.length === 1) {
+            addPlayerToList(allPlayers[0]);
+            document.getElementById("playerSearch").value = "";
+            return;
+        }
+
+        // Multiple matches — show options
+        suggestionsBox.innerHTML = `<p>Select a player:</p>`;
+        const list = document.createElement("ul");
+        list.className = "search-results";
+        allPlayers.forEach(player => {
+            const li = document.createElement("li");
+            const btn = document.createElement("button");
+            btn.className = "btn btn-link";
+            btn.innerHTML = `
+                <strong>${player.full_name}</strong> – ${player.team || "No Team"}<br>
+                <small>${player.position}, Age ${player.age}</small>
+            `;
+            btn.onclick = () => {
+                addPlayerToList(player);
+                document.getElementById("playerSearch").value = "";
+                document.getElementById("suggestions").innerHTML = "";
+            };
+            li.appendChild(btn);
+            list.appendChild(li);
+        });
+        suggestionsBox.appendChild(list);
+    }
+
+    function addPlayerToList(data) {
+        const cap = 5000000;
+        totalCap += cap;
+        updateCapDisplay();
+
+        const li = document.createElement("li");
+        li.className = "player-card";
+        li.dataset.cap = cap;
+        li.dataset.id = data.id;
+        li.innerHTML = `
+            <div class="player-card-row">
+                <div><strong>${data.full_name}</strong> – ${data.team || "No Team"}<br>
+                <small>${data.position}, ${data.age} — $5,000,000 🔁</small></div>
+                <button class="btn btn-remove">Remove</button>
+            </div>
+        `;
+        li.querySelector("button").onclick = () => {
+            totalCap -= cap;
+            updateCapDisplay();
+            li.remove();
+        };
+        document.getElementById("addedPlayers").appendChild(li);
+        document.getElementById("playerSearch").value = "";
+        document.getElementById("suggestions").innerHTML = "";
+    }
+
+    function resetAll() {
+        window.location.reload();
+    }
+
+    window.onload = function () {
+        const teams = new Set(), positions = new Set();
+        Object.values(playerDB).forEach(p => {
+            if (p.team) teams.add(p.team);
+            if (p.position) positions.add(p.position);
+        });
+
+        const teamFilter = document.getElementById("teamFilter");
+        [...teams].sort().forEach(t => {
+            const opt = document.createElement("option");
+            opt.value = t;
+            opt.textContent = t;
+            teamFilter.appendChild(opt);
+        });
+
+        const posFilter = document.getElementById("posFilter");
+        [...positions].sort().forEach(p => {
+            const opt = document.createElement("option");
+            opt.value = p;
+            opt.textContent = p;
+            posFilter.appendChild(opt);
+        });
+    };
+    </script>
+</body>
+</html>

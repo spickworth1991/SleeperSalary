@@ -417,10 +417,6 @@ def league_summary(league_name):
             #for uid in team_lookup:
                 #print(f"{uid}: {team_lookup[uid]}")
 
-
-
-
-
         for roster in rosters:
             user_id = roster.get("owner_id")
             display_name = user_lookup.get(user_id, f"User {user_id}")
@@ -800,6 +796,81 @@ def team_detail(league_name, user_id):
     except Exception as e:
         return f"❌ Error: {str(e)}"
     
+## --- Cap Simulator ---
+@app.route("/league/<league_name>/team/<user_id>/simulate")
+def cap_simulator(league_name, user_id):
+    leagues = load_all_leagues()
+    config = leagues.get(league_name)
+    if not config:
+        return "❌ League not found."
+
+    league_id = config.get("league_id")
+    if not league_id:
+        return "❌ League ID not set."
+
+    try:
+        df = load_flattened_salary_data()
+        df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+        current_year = datetime.now().year
+        prev_year = current_year - 1
+        next_year = current_year + 1
+
+        users, rosters = load_users_and_rosters_from_sheet(league_id)
+        roster = next((r for r in rosters if r.get("owner_id") == user_id), {})
+        all_ids = list(set(str(pid) for pid in (roster.get("starters", []) + roster.get("players", [])) if str(pid) != "0"))
+
+        sleeper_data = SLEEPER_CACHE.get("players", {})
+        sleeper_lookup = {
+            str(p.get("player_id")): {
+                "full_name": p.get("full_name", "Unknown"),
+                "position": p.get("position", "N/A"),
+                "team": p.get("team") or "No Team",
+                "age": p.get("age", "N/A")
+            } for p in sleeper_data.values() if p.get("player_id")
+        }
+
+        players = []
+        total_cap = 0
+        for pid in all_ids:
+            matched = df[df["player_id"] == pid]
+            curr = matched[matched["Year"] == current_year]
+            if curr.empty:
+                curr = matched[matched["Year"] == prev_year]
+
+            if not curr.empty:
+                row = curr.iloc[0].to_dict()
+                team_name = row.get("Team", "").strip().lower()
+                cap = row.get("Cap Hit", "0")
+                cap_num = float(str(cap).replace("$", "").replace(",", "").replace("-", "0") or 0)
+            else:
+                cap = "*5,000,000"
+                cap_num = 5000000
+
+            total_cap += cap_num
+            player = sleeper_lookup.get(pid, {})
+            players.append({
+                "Player": player.get("full_name", row.get("Player", "Unknown")),
+                "Team": row.get("Team", "Free Agent") if not curr.empty else "Free Agent",
+                "Cap_Hit": cap,
+                "Pos": player.get("position", row.get("Pos", "N/A")),
+                "Age": player.get("age", row.get("Age", "N/A")),
+                "player_id": pid,
+                "cap_num": cap_num
+            })
+
+        display_name = next((u.get("display_name", f"User {user_id}") for u in users if u.get("user_id") == user_id), f"User {user_id}")
+    
+        return render_template("cap_simulator.html",
+                               league_name=league_name,
+                               team_name=display_name,
+                               players=players,
+                               total_cap=f"${total_cap:,.0f}",
+                               player_ids=list(set(all_ids)),
+                               sleeper_data=sleeper_lookup)
+
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
 
 ## --- Admin Settings Page ---
 @app.route("/admin/<league_name>", methods=["GET", "POST"])

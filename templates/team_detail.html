@@ -44,7 +44,9 @@
       {% endfor %}
     </table>
 
-    <a href="{{ url_for('league_totals', league_name=league_name) }}">⬅ Back to League Totals</a> 
+    |<a href="{{ url_for('league_totals', league_name=league_name) }}">⬅ Back to League Totals---</a> |
+    <a href="{{ url_for('cap_simulator', league_name=league_name, user_id=user_id) }}">---🧮 Cap Room Simulator→</a>|
+
     {% if session.get('is_admin') and session.get('league_name') %}
   <div style="margin-top: 20px;">
     <a href="{{ url_for('admin_page', league_name=session['league_name']) }}">⚙️ Admin Settings</a>
