@@ -20,43 +20,61 @@
     <h4>Total Cap: <span id="totalCap">{{ total_cap }}</span></h4>
     <button onclick="resetAll()" class="btn">Reset All</button>
 
-    <div class="simulator-grid">
-      <div class="simulator-column">
-        <h5>Active Players</h5>
-        <ul id="activePlayers" class="player-list">
-          {% for player in players %}
-          <li data-id="{{ player.player_id }}" data-cap="{{ player.cap_num }}" data-team="{{ player.Team }}" data-pos="{{ player.Pos }}" class="player-card">
-            <div class="player-card-row">
-                <div>
-                    <strong>{{ player.Player }}</strong> – {{ player.Team }}<br>
-                    <small>{{ player.Pos }}, {{ player.Age }} — {{ player.Cap_Hit }}</small>
-                </div>
-                <div class="button-wrap">
-                    <button class="btn btn-remove" onclick="removePlayer(this)">Remove</button>
-                </div>
-                </div>
-          </li>
-          {% endfor %}
-        </ul>
-      </div>
-
-      <div class="simulator-column">
-        <h5>Removed Players</h5>
-        <ul id="removedPlayers" class="player-list"></ul>
-      </div>
-
-      <div class="simulator-column">
-        <h5>Add Players</h5>
-        <input type="text" id="playerSearch" placeholder="Type a player name..." />
-        <div id="suggestions" class="search-suggestions"></div>
-          <select id="teamFilter" onchange="searchPlayer()"><option value="">Filter by Team</option></select>
-          <select id="posFilter" onchange="searchPlayer()"><option value="">Filter by Position</option></select>
-
-        <button onclick="searchPlayer()" class="btn mt-2">Add Player</button>
-        <ul id="addedPlayers" class="player-list"></ul>
-      </div>
-    </div>
+    <div class="simulator-flex">
+  <div class="simulator-left">
+    <table class="responsive-table" id="playerTableWrapper">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Team</th>
+          <th>Pos</th>
+          <th>Age</th>
+          <th>Cap Hit</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="playerTable">
+        {% for player in players %}
+        <tr>
+          <td>{{ player.Player }}</td>
+          <td>{{ player.Team }}</td>
+          <td>{{ player.Pos }}</td>
+          <td>{{ player.Age }}</td>
+          <td data-num="{{ player.Cap_Hit|replace('$','')|replace(',','')|float }}">{{ player.Cap_Hit }}</td>
+          <td><button class="icon-button remove" onclick="removePlayer(this)">❌</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    
   </div>
+
+  <div class="simulator-column">
+    <h5>Add Players</h5>
+    <input type="text" id="playerSearch" placeholder="Type a player name..." />
+    <div id="suggestions" class="search-suggestions"></div>
+    <label for="teamFilter" class="visually-hidden">Filter by Team</label>
+    <select id="teamFilter" onchange="searchPlayer()"><option value="">Filter by Team</option></select>
+    <label for="posFilter" class="visually-hidden">Filter by Position</label>
+    <select id="posFilter" onchange="searchPlayer()"><option value="">Filter by Position</option></select>
+    <button onclick="searchPlayer()" class="btn mt-2">Add Player</button>
+
+    <h4>Removed Players</h4>
+    <table class="responsive-table removed-table">
+        <thead>
+            <tr>
+            <th>Name</th>
+            <th>Pos</th>
+            <th>Cap Hit</th>
+            <th></th>
+            </tr>
+        </thead>
+        <tbody id="removedList"></tbody>
+    </table>
+
+  </div>
+</div>
+
   <script>
     let totalCap = parseFloat("{{ total_cap|replace('$','')|replace(',','') }}");
     const playerDB = {{ sleeper_data | tojson }};
@@ -77,92 +95,116 @@
     }
 
     function removePlayer(button) {
-        const li = button.closest("li");
-        const cap = parseFloat(li.dataset.cap);
+        const row = button.closest('tr');
+        const cap = parseFloat(row.children[4].dataset.num) || 0;
         totalCap -= cap;
         updateCapDisplay();
 
-        button.remove();
-        const restore = document.createElement("button");
-        restore.textContent = "Add Back";
-        restore.className = "btn btn-restore";
-        restore.onclick = () => addBackPlayer(li, cap);
-        li.appendChild(restore);
-        document.getElementById("removedPlayers").appendChild(li);
+        const rowHTML = row.outerHTML;
+        const name = row.children[0].innerText;
+        const pos = row.children[2].innerText;
+
+        const isFromOriginalRoster = !row.querySelector('.remove').innerText.includes('*');
+        row.remove();
+        updateCapDisplay();
+
+        // Only add to removed list if original
+        if (isFromOriginalRoster) {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td>${name}</td>
+                <td>${pos}</td>
+                <td>${formatMoney(cap)}</td>
+                <td><button class="icon-button add" onclick='addBackRow(this, \`${rowHTML}\`)'>➕</button></td>
+            `;
+            document.getElementById("removedList").appendChild(row);
+        }
+
     }
 
-    function addBackPlayer(li, cap) {
+    function formatMoney(value) {
+        return "$" + Number(value).toLocaleString();
+        }
+
+
+    function addBackRow(button, rowHTML) {
+        const table = document.getElementById("playerTable");
+        const temp = document.createElement('tbody');
+        temp.innerHTML = rowHTML;
+        const restoredRow = temp.firstChild;
+
+        const cap = parseFloat(restoredRow.children[4].dataset.num) || 0;
         totalCap += cap;
         updateCapDisplay();
 
-        li.querySelector("button").remove();
-        const remove = document.createElement("button");
-        remove.textContent = "Remove";
-        remove.className = "btn btn-remove";
-        remove.onclick = () => removePlayer(remove);
-        li.appendChild(remove);
-        document.getElementById("activePlayers").appendChild(li);
+        restoredRow.querySelector('.remove').onclick = function() {
+            removePlayer(this);
+        };
+
+        table.appendChild(restoredRow);
+        button.closest('tr').remove();
+        sortTableByCap();
     }
 
-      function searchPlayer() {
-          const input = document.getElementById("playerSearch").value.trim().toLowerCase();
-          const selectedTeam = document.getElementById("teamFilter").value;
-          const selectedPos = document.getElementById("posFilter").value;
-          const suggestionsBox = document.getElementById("suggestions");
-          suggestionsBox.innerHTML = "";
+    function searchPlayer() {
+        const input = document.getElementById("playerSearch").value.trim().toLowerCase();
+        const selectedTeam = document.getElementById("teamFilter").value;
+        const selectedPos = document.getElementById("posFilter").value;
+        const suggestionsBox = document.getElementById("suggestions");
+        suggestionsBox.innerHTML = "";
 
-          if (!input) return;
+        if (!input) return;
 
-          const matches = Object.entries(idMap).filter(([name, players]) => {
-              const nameMatch = name.toLowerCase().includes(input);
-              const teamMatch = (player) => !selectedTeam || player.team === selectedTeam;
-              const posMatch = (player) => !selectedPos || player.position === selectedPos;
+        const matches = Object.entries(idMap).filter(([name, players]) => {
+            const nameMatch = name.toLowerCase().includes(input);
+            const teamMatch = (player) => !selectedTeam || player.team === selectedTeam;
+            const posMatch = (player) => !selectedPos || player.position === selectedPos;
 
-              // At least one matching player in this group must match all filters
-              return nameMatch && players.some(player => teamMatch(player) && posMatch(player));
-          });
+            // At least one matching player in this group must match all filters
+            return nameMatch && players.some(player => teamMatch(player) && posMatch(player));
+        });
 
-          if (matches.length === 0) {
-              suggestionsBox.innerHTML = `<p>No matches found.</p>`;
-              return;
-          }
+        if (matches.length === 0) {
+            suggestionsBox.innerHTML = `<p>No matches found.</p>`;
+            return;
+        }
 
-          const allPlayers = matches.flatMap(([_, players]) =>
-              players.filter(player =>
-                  (!selectedTeam || player.team === selectedTeam) &&
-                  (!selectedPos || player.position === selectedPos)
-              )
-          );
+        const allPlayers = matches.flatMap(([_, players]) =>
+            players.filter(player =>
+                (!selectedTeam || player.team === selectedTeam) &&
+                (!selectedPos || player.position === selectedPos)
+            )
+        );
 
-          if (allPlayers.length === 1) {
-              addPlayerToList(allPlayers[0]);
-              document.getElementById("playerSearch").value = "";
-              return;
-          }
+        if (allPlayers.length === 1) {
+            addPlayerToList(allPlayers[0]);
+            document.getElementById("playerSearch").value = "";
+            return;
+        }
 
-          // Multiple matches — show options
-          suggestionsBox.innerHTML = `<p>Select a player:</p>`;
-          const list = document.createElement("ul");
-          list.className = "search-results";
-          allPlayers.forEach(player => {
-              const li = document.createElement("li");
-              const btn = document.createElement("button");
-              btn.className = "btn btn-link";
-              btn.innerHTML = `
-                  <strong>${player.full_name}</strong> – ${player.team || "No Team"}<br>
-                  <small>${player.position}, Age ${player.age}</small>
-                  <small>${player.cap_str || "$5,000,000"}</small>
-              `;
-              btn.onclick = () => {
-                  addPlayerToList(player);
-                  document.getElementById("playerSearch").value = "";
-                  document.getElementById("suggestions").innerHTML = "";
-              };
-              li.appendChild(btn);
-              list.appendChild(li);
-          });
-          suggestionsBox.appendChild(list);
-      }
+        // Multiple matches — show options
+        suggestionsBox.innerHTML = `<p>Select a player:</p>`;
+        const list = document.createElement("ul");
+        list.className = "search-results";
+        allPlayers.forEach(player => {
+            const li = document.createElement("li");
+            const btn = document.createElement("button");
+            btn.className = "btn btn-link";
+            btn.innerHTML = `
+                <strong>${player.full_name}</strong> – ${player.team || "No Team"}<br>
+                <small>${player.position}, Age ${player.age}</small>
+                <small>${player.cap_str || "$5,000,000"}</small>
+            `;
+            btn.onclick = () => {
+                addPlayerToList(player);
+                document.getElementById("playerSearch").value = "";
+                document.getElementById("suggestions").innerHTML = "";
+            };
+            li.appendChild(btn);
+            list.appendChild(li);
+        });
+        suggestionsBox.appendChild(list);
+    }
 
 
     function addPlayerToList(data) {
@@ -171,26 +213,35 @@
         totalCap += cap;
         updateCapDisplay();
 
-        const li = document.createElement("li");
-        li.className = "player-card";
-        li.dataset.cap = cap;
-        li.dataset.id = data.id;
-        li.innerHTML = `
-            <div class="player-card-row">
-                <div><strong>${data.full_name}</strong> – ${data.team || "No Team"}<br>
-                <small>${data.position}, ${data.age} — ${capStr} 🔁</small>
-                <button class="btn btn-remove">Remove</button>
-            </div>
+        const table = document.getElementById("playerTable");
+        const row = table.insertRow();
+        row.innerHTML = `
+            <td>${data.full_name}</td>
+            <td>${data.team || "No Team"}</td>
+            <td>${data.position}</td>
+            <td>${data.age}</td>
+            <td data-num="${cap}">${capStr}</td>
+            <td>
+            <button class="icon-button remove" onclick="removePlayer(this)">❌ *</button>
+            </td>
         `;
-        li.querySelector("button").onclick = () => {
-            totalCap -= cap;
-            updateCapDisplay();
-            li.remove();
-        };
-        document.getElementById("addedPlayers").appendChild(li);
-        document.getElementById("playerSearch").value = "";
-        document.getElementById("suggestions").innerHTML = "";
+
+        sortTableByCap();
     }
+
+    function sortTableByCap() {
+        const tbody = document.getElementById("playerTable");
+        const rows = Array.from(tbody.querySelectorAll("tr"));
+
+        rows.sort((a, b) => {
+            const aVal = parseFloat(a.children[4].dataset.num) || 0;
+            const bVal = parseFloat(b.children[4].dataset.num) || 0;
+            return bVal - aVal;
+        });
+
+        rows.forEach(row => tbody.appendChild(row));
+    }
+
 
     function resetAll() {
         window.location.reload();
@@ -218,7 +269,10 @@
             opt.textContent = p;
             posFilter.appendChild(opt);
         });
+
+        sortTableByCap();  // initial sort
     };
+
     </script>
 </body>
 </html>
