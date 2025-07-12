@@ -241,3 +241,47 @@ a:visited {
 .btn-link:hover {
   background-color: #f0f0f0;
 }
+
+/* === Mobile Enhancements === */
+
+.responsive-table {
+    overflow-x: auto;
+    display: block;
+}
+
+@media (max-width: 768px) {
+    .simulator-grid {
+        flex-direction: column;
+    }
+
+    .container {
+        padding: 1rem;
+    }
+
+    input, select, button {
+        font-size: 1rem;
+        padding: 0.75rem;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    table {
+        width: 100%;
+        font-size: 0.9rem;
+    }
+
+    th, td {
+        word-break: break-word;
+        padding: 0.5rem;
+    }
+
+    .button-row {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    h1, h2, h3 {
+        font-size: 1.5rem;
+        text-align: center;
+    }
+}

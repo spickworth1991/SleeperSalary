@@ -1077,7 +1077,8 @@ def cap_simulator(league_name, user_id):
                                players=players,
                                total_cap=f"${total_cap:,.0f}",
                                player_ids=list(set(all_ids)),
-                               sleeper_data=sleeper_lookup)
+                               sleeper_data=sleeper_lookup,
+                               user_id=user_id)
 
     except Exception as e:
         return f"❌ Error: {str(e)}"

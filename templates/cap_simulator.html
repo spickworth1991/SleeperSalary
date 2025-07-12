@@ -9,6 +9,12 @@
 <body>
   <div class="container">
     <h2>{{ team_name }} – Cap Room Simulator</h2>
+    |<a href="{{ url_for('league_totals', league_name=league_name) }}">⬅ Back to League Totals---</a> |
+    <a href="{{ url_for('team_detail', league_name=league_name, user_id=user_id) }}">---Back To Team Detail→</a> |
+    {% if session.get('is_admin') and session.get('league_name') %}
+        <a href="{{ url_for('admin_page', league_name=session['league_name']) }}">⚙️ Admin Settings</a> |
+    {% endif %}
+
     <p class="text-muted">* Unmatched players are assigned a default cap hit of $5,000,000.</p>
 
     <h4>Total Cap: <span id="totalCap">{{ total_cap }}</span></h4>
