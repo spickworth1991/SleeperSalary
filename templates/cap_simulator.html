@@ -35,14 +35,15 @@
       </thead>
       <tbody id="playerTable">
         {% for player in players %}
-        <tr>
-          <td>{{ player.Player }}</td>
-          <td>{{ player.Team }}</td>
-          <td>{{ player.Pos }}</td>
-          <td>{{ player.Age }}</td>
-          <td data-num="{{ player.Cap_Hit|replace('$','')|replace(',','')|float }}">{{ player.Cap_Hit }}</td>
-          <td><button class="icon-button remove" onclick="removePlayer(this)">❌</button></td>
+        <tr data-id="{{ player.player_id }}" data-original="{{ (player.player_id in player_ids) | lower }}">
+            <td>{{ player.Player }}</td>
+            <td>{{ player.Team }}</td>
+            <td>{{ player.Pos }}</td>
+            <td>{{ player.Age }}</td>
+            <td data-num="{{ player.Cap_Hit|replace('$','')|replace(',','')|float }}">{{ player.Cap_Hit }}</td>
+            <td><button class="icon-button remove" onclick="removePlayer(this)">❌</button></td>
         </tr>
+
         {% endfor %}
       </tbody>
     </table>
@@ -77,6 +78,7 @@
 </div>
 
   <script>
+    const originalIDs = new Set({{ player_ids | tojson }});
     let totalCap = parseFloat("{{ total_cap|replace('$','')|replace(',','') }}");
     const playerDB = {{ sleeper_data | tojson }};
     const existingIDs = new Set({{ player_ids | tojson }});
@@ -89,6 +91,7 @@
             if (!idMap[name]) idMap[name] = [];
             idMap[name].push({ id, ...data });
         }
+        sortTableByCap();
     }
 
     function updateCapDisplay() {
@@ -97,55 +100,80 @@
 
     function removePlayer(button) {
         const row = button.closest('tr');
+        const pid = row.dataset.id;
+        const name = row.children[0].innerText;
+        const team = row.children[1].innerText;
+        const pos = row.children[2].innerText;
+        const age = row.children[3].innerText;
+        const capStr = row.children[4].innerText;
         const cap = parseFloat(row.children[4].dataset.num) || 0;
+
         totalCap -= cap;
         updateCapDisplay();
-
-        const rowHTML = row.outerHTML;
-        const name = row.children[0].innerText;
-        const pos = row.children[2].innerText;
-
-        const isFromOriginalRoster = !row.querySelector('.remove').innerText.includes('*');
         row.remove();
-        updateCapDisplay();
+        sortTableByCap();
 
-        // Only add to removed list if original
-        if (isFromOriginalRoster) {
-            const row = document.createElement("tr");
-            row.innerHTML = `
+        // ✅ Only add to removed list if player is from original roster
+        if (row.dataset.original === "true") {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
                 <td>${name}</td>
                 <td>${pos}</td>
-                <td>${formatMoney(cap)}</td>
-                <td><button class="icon-button add" onclick='addBackRow(this, \`${rowHTML}\`)'>➕</button></td>
+                <td>${capStr}</td>
+                <td><button class="icon-button add"
+                    data-id="${pid}"
+                    data-name="${name.replace(/"/g, '&quot;')}"
+                    data-team="${team.replace(/"/g, '&quot;')}"
+                    data-pos="${pos}"
+                    data-age="${age}"
+                    data-capstr="${capStr}"
+                    data-cap="${cap}"
+                    onclick="handleAddBack(this)">➕</button></td>
             `;
-            document.getElementById("removedList").appendChild(row);
+            document.getElementById("removedList").appendChild(tr);sortTableByCap();
         }
 
+
+        // Remove from ID set so you can't re-add again unless manually done
+        existingIDs.delete(pid);
     }
+
 
     function formatMoney(value) {
         return "$" + Number(value).toLocaleString();
         }
 
 
-    function addBackRow(button, rowHTML) {
-        const table = document.getElementById("playerTable");
-        const temp = document.createElement('tbody');
-        temp.innerHTML = rowHTML;
-        const restoredRow = temp.firstChild;
+    function addBackPlayer(pid, name, team, pos, age, capStr, cap) {
+    const table = document.getElementById("playerTable");
 
-        const cap = parseFloat(restoredRow.children[4].dataset.num) || 0;
+    const row = document.createElement("tr");
+        row.dataset.id = pid;
+        row.innerHTML = `
+            <td>${name}</td>
+            <td>${team}</td>
+            <td>${pos}</td>
+            <td>${age}</td>
+            <td data-num="${cap}">${capStr}</td>
+            <td><button class="icon-button remove" onclick="removePlayer(this)">❌</button></td>
+        `;
+
+        table.appendChild(row);
         totalCap += cap;
         updateCapDisplay();
-
-        restoredRow.querySelector('.remove').onclick = function() {
-            removePlayer(this);
-        };
-
-        table.appendChild(restoredRow);
-        button.closest('tr').remove();
         sortTableByCap();
+
+        // Remove from removed list
+        // Remove from removed list using data-id match
+        const removedRow = document.querySelector(`#removedList button[data-id="${pid}"]`);
+        if (removedRow) {
+            removedRow.closest('tr').remove();
+        }
+
+
+        existingIDs.add(pid);
     }
+
 
     const playerSearch = document.getElementById("playerSearch");
     const suggestions = document.getElementById("suggestions");
@@ -185,7 +213,17 @@
         }
     });
 
+    function handleAddBack(button) {
+        const pid = button.dataset.id;
+        const name = button.dataset.name;
+        const team = button.dataset.team;
+        const pos = button.dataset.pos;
+        const age = button.dataset.age;
+        const capStr = button.dataset.capstr;
+        const cap = parseFloat(button.dataset.cap) || 0;
 
+        addBackPlayer(pid, name, team, pos, age, capStr, cap);
+    }
 
 
 
@@ -232,6 +270,8 @@
 
         sortTableByCap();  // initial sort
     };
+
+    
 
     </script>
 </body>
