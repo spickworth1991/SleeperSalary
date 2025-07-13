@@ -34,9 +34,6 @@ def get_service():
 
 
 def load_flattened_salary_data():
-    global SALARY_DB_CACHE
-    if SALARY_DB_CACHE is not None:
-        return SALARY_DB_CACHE
     if os.environ.get("RENDER") == "true":
         df = pd.read_csv("SalaryDB.csv", dtype={"player_id": str})
         df["player_id"] = df["player_id"].astype(str).str.strip()
@@ -48,7 +45,7 @@ def load_flattened_salary_data():
         SALARY_DB_CACHE = df
         return df
 
-
+@cache.memoize(timeout=300)
 def get_league_rosters(league_id):
     url = f"https://api.sleeper.app/v1/league/{league_id}/rosters"
     resp = requests.get(url)
@@ -56,20 +53,19 @@ def get_league_rosters(league_id):
         raise Exception(f"Failed to fetch rosters: {resp.text}")
     return resp.json()
 
-
+@cache.memoize(timeout=300)
 def get_league_users(league_id):
     url = f"https://api.sleeper.app/v1/league/{league_id}/users"
+    #print(f"DEBUG: Fetching {url}")
     resp = requests.get(url)
-    if resp.status_code != 200:
+    #print(f"DEBUG status={resp.status_code}, body={resp.text[:200]}")
+    if resp.status_code != 200 or resp.text.strip() in ("null", ""):
         raise Exception(f"Failed to fetch users: {resp.text}")
     return resp.json()
 
 
+@cache.memoize(timeout=600)
 def load_all_leagues():
-    global LEAGUES_CACHE
-    if LEAGUES_CACHE is not None:
-        return LEAGUES_CACHE
-
     service = get_service()
     sheet = service.spreadsheets()
     result = sheet.values().get(
@@ -96,8 +92,10 @@ def load_all_leagues():
         if len(row) >= 6:
             leagues[league_name]["draft_room_public"] = row[5].strip().lower() == "true"
 
-    LEAGUES_CACHE = leagues
     return leagues
+
+
+
 
 
 
@@ -197,21 +195,12 @@ def save_league_session_to_sheet(league_id, users, rosters):
                                    "values": rows
                                }).execute()
 
-def load_league_data(league_name):
-    if not session.get(f"{league_name}_users") or not session.get(f"{league_name}_rosters"):
-        leagues = load_all_leagues()
-        config = leagues.get(league_name)
-        if not config:
-            return None, None, None
-
-        league_id = config.get("league_id")
-        users, rosters = load_users_and_rosters_from_sheet(league_id)
-        session[f"{league_name}_users"] = users
-        session[f"{league_name}_rosters"] = rosters
-        session[f"{league_name}_config"] = config
-    return (session[f"{league_name}_users"],
-            session[f"{league_name}_rosters"],
-            session[f"{league_name}_config"])
+@cache.memoize(timeout=3600)
+def load_league_data(league_id):
+    # Replaces USER_ROSTER_CACHE
+    users = get_league_users(league_id)
+    rosters = get_league_rosters(league_id)
+    return {"users": users, "rosters": rosters}
 
 
 def load_users_and_rosters_from_sheet(league_id):
@@ -251,21 +240,13 @@ def load_users_and_rosters_from_sheet(league_id):
 
     return users, rosters
 
-def get_cached_salary_df():
-    from pandas import read_json
-    from io import StringIO
-    if "SALARY_DF" in session:
-        return read_json(StringIO(session["SALARY_DF"]))
-    return load_flattened_salary_data()
 
 @cache.memoize(timeout=3600)
 def get_sleeper_players():
-    url = "https://api.sleeper.app/v1/players/nfl"
-    resp = requests.get(url)
-    if resp.status_code == 200:
-        return resp.json()
-    else:
-        raise Exception("Failed to fetch Sleeper player data.")
+    with open("sleeper_players.json", "r") as f:
+        return json.load(f)
+
+
 
 @cache.memoize(timeout=3600)
 def load_flattened_salary_data():
@@ -274,16 +255,34 @@ def load_flattened_salary_data():
     df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
     return df
 
+@cache.memoize(timeout=300)
+def get_draft_id(league_id):
+    resp = requests.get(f"https://api.sleeper.app/v1/league/{league_id}/drafts")
+    if resp.status_code != 200:
+        raise Exception("Failed to get drafts")
+    drafts = resp.json()
+    return drafts[0].get("draft_id") if drafts else None
+
+@cache.memoize(timeout=300)
+def get_draft_picks(draft_id):
+    resp = requests.get(f"https://api.sleeper.app/v1/draft/{draft_id}/picks")
+    if resp.status_code != 200:
+        raise Exception(f"Failed to fetch draft picks: {resp.text}")
+    return resp.json()
+
+@cache.memoize(timeout=600)
+def build_salary_lookup():
+    df = load_flattened_salary_data()
+    lookup = {}
+    for _, row in df.iterrows():
+        pid = str(row["player_id"]).strip()
+        lookup.setdefault(pid, []).append(row)
+    return lookup
+
+
 
 
 # ======================== Global Constants ========================
-SLEEPER_CACHE = {}
-
-LEAGUES_CACHE = None
-USER_ROSTER_CACHE = {}
-
-
-SALARY_DB_CACHE = None
 
 TEAM_THEME_DATA = {
     "ARI": {
@@ -452,73 +451,63 @@ TEAM_THEME_DATA = {
 
 
 ## --- Login ---
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
-        leagues = load_all_leagues()
-        name = request.form.get("league_name", "").strip()
-        pw = request.form.get("league_password", "")
-        admin_pw = request.form.get("admin_password", "")
+    leagues = load_all_leagues()
+    #print("DEBUG leagues loaded from sheet:")
+    for name, data in leagues.items():
+        print(f"  {name} → {data}")
 
-        league = leagues.get(name)
-        if not league or pw != league.get("password"):
-            flash("Invalid league name or password.", "error")
+
+    if request.method == "POST":
+        league_name = request.form.get("league_name")
+        password = request.form.get("league_password")
+        admin_password = request.form.get("admin_password")
+
+        if league_name not in leagues:
+            flash("Invalid league name.", "danger")
             return redirect(url_for("login"))
 
-        session["league_name"] = name
-        session["is_admin"] = (admin_pw == league.get("admin_password"))
+        if password != leagues[league_name]["password"]:
+            flash("Incorrect password.", "danger")
+            return redirect(url_for("login"))
 
-        league_id = league.get("league_id")
-        if not league_id:
-            if session["is_admin"]:
-                flash("⚠️ League ID not set. Configure it on the Admin page.", "warning")
-                return redirect(url_for("admin_page", league_name=name))
-            else:
-                flash("❌ League not yet configured. Contact the Commissioner.", "error")
-                return redirect(url_for("login"))
+        league_id = leagues[league_name]["league_id"]
 
-        # Pre-cache required data
         try:
+            # 🔁 Cache everything now
             get_sleeper_players()
             load_flattened_salary_data()
+            load_league_data(league_id)
         except Exception as e:
-            flash(f"⚠️ Error caching required data: {str(e)}", "error")
+            flash(f"⚠️ Login failed while loading cached data: {e}", "danger")
             return redirect(url_for("login"))
 
-        try:
-            users = get_league_users(league_id)
-            rosters = get_league_rosters(league_id)
-            save_league_session_to_sheet(league_id, users, rosters)
-        except Exception as e:
-            if session["is_admin"]:
-                flash(f"⚠️ League ID appears invalid: {str(e)}", "warning")
-                return redirect(url_for("admin_page", league_name=name))
-            else:
-                flash("❌ Problem accessing league. Contact Commissioner.", "error")
-                return redirect(url_for("login"))
-
-        if session["is_admin"]:
-            return redirect(url_for("admin_page", league_name=name))
+        if admin_password == leagues[league_name]["admin_password"]:
+            session["is_admin"] = True
         else:
-            return redirect(url_for("league_totals", league_name=name))
+            session["is_admin"] = False
 
-    return render_template("login.html")
+        session["league_name"] = league_name
 
+        # ✅ Redirect based on admin level
+        if session["is_admin"]:
+            return redirect(url_for("admin_page", league_name=league_name))
+        else:
+            return redirect(url_for("league_totals", league_name=league_name))
+
+
+    return render_template("login.html", leagues=leagues)
 
 
 ## --- Logout ---
 @app.route("/logout")
 def logout():
     session.clear()
-    SLEEPER_CACHE.clear()  # Clear the Sleeper cache too
     flash("You have been logged out.", "success")
     return redirect(url_for("login"))
 
 
-## --- Root Redirect ---
-@app.route("/")
-def root():
-    return redirect(url_for("login"))
 
 
 ## --- League Creation ---
@@ -563,7 +552,7 @@ def league_summary(league_name):
     league_id = config.get("league_id")
     if not league_id:
         return "❌ League ID not set. Admin must configure it."
-    if not SLEEPER_CACHE.get("players"):
+    if not get_sleeper_players():
         return "❌ Sleeper cache not loaded. Please log in again."
 
     try:
@@ -574,7 +563,7 @@ def league_summary(league_name):
 
         #print(f"🔎 current year= {current_year}")
         # Fetch Sleeper player database once
-        sleeper_data = SLEEPER_CACHE.get("players", {})
+        sleeper_data = get_sleeper_players()
 
         # Convert to quick lookup
         sleeper_lookup = {
@@ -589,7 +578,13 @@ def league_summary(league_name):
 
         team_data = []
         # Fetch display names
-        users, rosters, config = load_league_data(league_name)
+        leagues = load_all_leagues()
+        config = leagues.get(league_name)
+        league_id = config.get("league_id")
+        data = load_league_data(league_id)
+        users = data["users"]
+        rosters = data["rosters"]
+
         if not config:
             return "❌ League not found or config missing"
 
@@ -769,7 +764,13 @@ def league_totals(league_name):
         prev_year = current_year - 1
 
         # AFTER
-        users, rosters, config = load_league_data(league_name)
+        leagues = load_all_leagues()
+        config = leagues.get(league_name)
+        league_id = config.get("league_id")
+        data = load_league_data(league_id)
+        users = data["users"]
+        rosters = data["rosters"]
+
         if not config:
             return "❌ League not found or config missing"
 
@@ -863,12 +864,18 @@ def team_detail(league_name, user_id):
         prev_year = current_year - 1
         next_year = current_year + 1
 
-        users, rosters, config = load_league_data(league_name)
+        leagues = load_all_leagues()
+        config = leagues.get(league_name)
+        league_id = config.get("league_id")
+        data = load_league_data(league_id)
+        users = data["users"]
+        rosters = data["rosters"]
+
         if not config:
             return "❌ League not found or config missing"
 
 
-        sleeper_data = SLEEPER_CACHE.get("players", {})
+        sleeper_data = get_sleeper_players()
 
         sleeper_lookup = {
             str(p.get("player_id")): {
@@ -1019,7 +1026,13 @@ def cap_simulator(league_name, user_id):
             pid = str(row["player_id"]).strip()
             salary_lookup.setdefault(pid, []).append(row)
 
-        users, rosters, config = load_league_data(league_name)
+        leagues = load_all_leagues()
+        config = leagues.get(league_name)
+        league_id = config.get("league_id")
+        data = load_league_data(league_id)
+        users = data["users"]
+        rosters = data["rosters"]
+
         roster = next((r for r in rosters if r.get("owner_id") == user_id), {})
         all_ids = list(set(str(pid) for pid in roster.get("players", []) + roster.get("starters", []) if str(pid) != "0"))
 
@@ -1117,7 +1130,7 @@ def draft_room(league, draft_id):
     current_year = datetime.now().year
     prev_year = current_year - 1
 
-    sleeper_data = SLEEPER_CACHE.get("players", {})
+    sleeper_data = get_sleeper_players()
     sleeper_lookup = {
         str(p.get("player_id")): {
             "name": p.get("full_name", "Unknown"),
@@ -1148,7 +1161,7 @@ def draft_room(league, draft_id):
         return redirect(request.url)
 
     # Fetch draft picks
-    picks = requests.get(f'https://api.sleeper.app/v1/draft/{draft_id}/picks').json()
+    picks = get_draft_picks(draft_id)
 
     # Build rosters by draft pick
     rosters = {}
@@ -1224,33 +1237,23 @@ def draft_room_home(league):
         flash("🔒 The Draft Room is currently hidden from non-admins.", "error")
         return redirect(url_for("league_summary", league_name=league))
 
-
     league_id = config.get("league_id")
     if not league_id:
         return "❌ League ID not configured."
 
-    # Get draft_id dynamically
-    draft_resp = requests.get(f"https://api.sleeper.app/v1/league/{league_id}/drafts")
-    if draft_resp.status_code != 200:
-        return "❌ Could not retrieve draft data."
-
-    drafts = draft_resp.json()
-    if not drafts:
+    draft_id = get_draft_id(league_id)
+    if not draft_id:
         return "❌ No drafts found for this league."
 
-    draft_id = drafts[0].get("draft_id")
-
-    # Load draft picks
-    picks = requests.get(f'https://api.sleeper.app/v1/draft/{draft_id}/picks').json()
-    user_data = requests.get(f'https://api.sleeper.app/v1/league/{league_id}/users').json()
+    picks = get_draft_picks(draft_id)
+    users = get_league_users(league_id)
 
     user_lookup = {
         str(u["user_id"]): u.get("metadata", {}).get("team_name") or u.get("display_name", f"User {u['user_id']}")
-        for u in user_data
+        for u in users
     }
 
-    df = load_flattened_salary_data()
-    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+    salary_lookup = build_salary_lookup()
     current_year = datetime.now().year
     prev_year = current_year - 1
 
@@ -1274,16 +1277,16 @@ def draft_room_home(league):
     for rid, data in rosters.items():
         total_cap = 0
         for pid in data["players"]:
-            matched = df[df["player_id"] == pid]
-            curr = matched[matched["Year"] == current_year]
-            if curr.empty:
-                curr = matched[matched["Year"] == prev_year]
+            entries = salary_lookup.get(pid, [])
+            row = next((r.to_dict() for r in entries if r["Year"] == current_year), None) or \
+                  next((r.to_dict() for r in entries if r["Year"] == prev_year), None)
 
-            if not curr.empty:
-                cap_str = curr.iloc[0].get("Cap Hit", "0")
+            if row:
+                cap_str = row.get("Cap Hit", "0")
                 cap_num = float(str(cap_str).replace("$", "").replace(",", "").replace("-", "0") or 0)
             else:
                 cap_num = 5000000
+
             total_cap += cap_num
 
         teams.append({
@@ -1299,62 +1302,52 @@ def draft_room_home(league):
     return render_template("draft_room_home.html",
                            league=league,
                            teams=teams,
-                           is_admin=session.get("is_admin", False),
+                           is_admin=is_admin,
                            config=config)
+
 
 @app.route("/draft_room/<league>/<draft_id>/team/<roster_id>", methods=["GET", "POST"])
 def draft_team_view(league, draft_id, roster_id):
-    if not SLEEPER_CACHE.get("players"):
-        try:
-            resp = requests.get("https://api.sleeper.app/v1/players/nfl")
-            if resp.status_code == 200:
-                SLEEPER_CACHE["players"] = resp.json()
-            else:
-                flash("⚠️ Failed to load Sleeper players.", "warning")
-                return redirect(url_for("login"))
-        except Exception as e:
-            flash(f"⚠️ Sleeper API error: {e}", "warning")
-            return redirect(url_for("login"))
+    sleeper_data = get_sleeper_players()
     is_admin = session.get("is_admin", False)
     leagues = load_all_leagues()
     config = leagues.get(league)
     league_id = config.get("league_id")
 
-    user_data = requests.get(f"https://api.sleeper.app/v1/league/{league_id}/users").json()
+    league_data = load_league_data(league_id)
+    users = league_data["users"]
     user_lookup = {
         str(u["user_id"]): u.get("metadata", {}).get("team_name") or u.get("display_name", f"User {u['user_id']}")
-        for u in user_data
+        for u in users
     }
 
-    df = load_flattened_salary_data()
-    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+
+    salary_lookup = build_salary_lookup()
+    sleeper_data = get_sleeper_players()
     current_year = datetime.now().year
     prev_year = current_year - 1
 
-    sleeper_data = SLEEPER_CACHE.get("players", {})
     sleeper_lookup = {}
     for p in sleeper_data.values():
         pid = str(p.get("player_id"))
         if not pid:
             continue
+
         name = p.get("full_name", "Unknown")
         pos = p.get("position", "N/A")
         team = p.get("team") or "No Team"
         age = p.get("age", "N/A")
 
-        matched = df[df["player_id"] == pid]
-        curr = matched[matched["Year"] == current_year]
-        if curr.empty:
-            curr = matched[matched["Year"] == prev_year]
+        entries = salary_lookup.get(pid, [])
+        row = next((r.to_dict() for r in entries if r["Year"] == current_year), None) or \
+            next((r.to_dict() for r in entries if r["Year"] == prev_year), None)
 
-        if not curr.empty:
-            row = curr.iloc[0].to_dict()
-            cap = row.get("Cap Hit", "$5,000,000")
-            cap_str = cap
-            cap_num = float(str(cap).replace("$", "").replace(",", "").replace("-", "0") or 0)
+        if row:
+            cap_str = row.get("Cap Hit", "$5,000,000")
+            cap_num = float(str(cap_str).replace("$", "").replace(",", "").replace("-", "0") or 0)
         else:
-            cap_num = 5000000
             cap_str = "$5,000,000"
+            cap_num = 5000000
 
         sleeper_lookup[pid] = {
             "name": name,
@@ -1366,7 +1359,8 @@ def draft_team_view(league, draft_id, roster_id):
         }
 
 
-    picks = requests.get(f"https://api.sleeper.app/v1/draft/{draft_id}/picks").json()
+
+    picks = get_draft_picks(draft_id)
     # 🟩 Picks for this team (used for displaying active roster)
     team_active_ids = [str(p["player_id"]) for p in picks if str(p["roster_id"]) == roster_id]
 
@@ -1419,19 +1413,18 @@ def draft_team_view(league, draft_id, roster_id):
         rows = []
         total = 0
         for pid in ids:
-            matched = df[df["player_id"] == pid]
-            curr = matched[matched["Year"] == current_year]
-            if curr.empty:
-                curr = matched[matched["Year"] == prev_year]
+            entries = salary_lookup.get(pid, [])
+            row = next((r.to_dict() for r in entries if r["Year"] == current_year), None) or \
+                next((r.to_dict() for r in entries if r["Year"] == prev_year), None)
 
-            if not curr.empty:
-                row = curr.iloc[0].to_dict()
+            if row:
                 cap = row.get("Cap Hit", "0")
                 cap_num = float(str(cap).replace("$", "").replace(",", "").replace("-", "0") or 0)
                 name = row.get("Player", "Unknown")
             else:
                 cap_num = 5000000
                 name = sleeper_lookup.get(pid, {}).get("name", "Unknown")
+
 
             total += cap_num
             rows.append({
@@ -1543,7 +1536,7 @@ def unmatched_players(league_name):
 
         unmatched_ids = sorted(all_ids - matched_ids)
 
-        all_players = SLEEPER_CACHE.get("players", {})  # Cached API call
+        all_players = get_sleeper_players()  # Cached API call
 
         for pid in unmatched_ids:
             player = all_players.get(pid)
@@ -1645,23 +1638,42 @@ def theme_selector(league_name):
 # ======================== Admin Draft Refresh ========================
 @app.route("/admin/<league_name>/refresh_cache")
 def refresh_cache(league_name):
-    global LEAGUES_CACHE, USER_ROSTER_CACHE
-
-    LEAGUES_CACHE = None
-
-    leagues = load_all_leagues()
-    if league_name not in leagues:
-        flash(f"League '{league_name}' not found.", "danger")
-        return redirect(url_for("admin_home", league_name=league_name))
-
-    league_id = leagues[league_name]["league_id"]
-    USER_ROSTER_CACHE.pop(league_id, None)  # important: pop using league_id
+    if not session.get("is_admin") or session.get("league_name") != league_name:
+        return "🔒 Access denied."
 
     try:
-        load_league_data(league_name)
-        flash("League cache refreshed successfully.", "info")
+        # Refresh the Sleeper players JSON
+        url = "https://api.sleeper.app/v1/players/nfl"
+        resp = requests.get(url)
+        if resp.status_code != 200:
+            raise Exception(f"Failed to fetch Sleeper players: {resp.text}")
+        
+        data = resp.json()
+        slim_players = {}
+
+        for pid, p in data.items():
+            full_name = p.get("full_name") or f"{p.get('first_name', '')} {p.get('last_name', '')}".strip()
+            if not full_name:
+                continue
+
+            slim_players[pid] = {
+                "player_id": pid,
+                "full_name": full_name,
+                "position": p.get("position", "N/A"),
+                "team": p.get("team", "No Team"),
+                "age": p.get("age", "N/A")
+            }
+
+        with open("sleeper_players.json", "w") as f:
+            json.dump(slim_players, f, indent=2)
+
+        # Clear all memoized cache (including this one)
+        cache.clear()
+
+        flash("✅ Cache cleared and Sleeper player data refreshed.", "success")
+
     except Exception as e:
-        flash(f"Error refreshing cache: {e}", "danger")
+        flash(f"❌ Failed to refresh Sleeper players: {e}", "danger")
 
     return redirect(url_for("admin_page", league_name=league_name))
 
