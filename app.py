@@ -8,11 +8,14 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from difflib import get_close_matches
+from flask_caching import Cache
 
 
 # ======================== Flask App Setup ========================
 app = Flask(__name__, static_folder='static', template_folder='templates')
 app.secret_key = "supersecret"  # Needed for flashing messages
+cache = Cache(config={"CACHE_TYPE": "SimpleCache"})
+cache.init_app(app)
 
 if os.environ.get("RENDER") == "true":
     SERVICE_ACCOUNT_FILE = "nfl-stats-ff-00a13e9db7db.json"
@@ -63,10 +66,16 @@ def get_league_users(league_id):
 
 
 def load_all_leagues():
+    global LEAGUES_CACHE
+    if LEAGUES_CACHE is not None:
+        return LEAGUES_CACHE
+
     service = get_service()
     sheet = service.spreadsheets()
-    result = sheet.values().get(spreadsheetId=SPREADSHEET_ID,
-                                range="config!A2:F").execute()
+    result = sheet.values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range="config!A2:F"
+    ).execute()
     values = result.get('values', [])
     leagues = {}
     for row in values:
@@ -86,10 +95,10 @@ def load_all_leagues():
                 leagues[league_name]["themes"] = {}
         if len(row) >= 6:
             leagues[league_name]["draft_room_public"] = row[5].strip().lower() == "true"
-        else:
-            leagues[league_name]["draft_room_public"] = False
 
+    LEAGUES_CACHE = leagues
     return leagues
+
 
 
 def save_new_league_to_google_sheet(league_name, password, admin_password,
@@ -188,6 +197,22 @@ def save_league_session_to_sheet(league_id, users, rosters):
                                    "values": rows
                                }).execute()
 
+def load_league_data(league_name):
+    if not session.get(f"{league_name}_users") or not session.get(f"{league_name}_rosters"):
+        leagues = load_all_leagues()
+        config = leagues.get(league_name)
+        if not config:
+            return None, None, None
+
+        league_id = config.get("league_id")
+        users, rosters = load_users_and_rosters_from_sheet(league_id)
+        session[f"{league_name}_users"] = users
+        session[f"{league_name}_rosters"] = rosters
+        session[f"{league_name}_config"] = config
+    return (session[f"{league_name}_users"],
+            session[f"{league_name}_rosters"],
+            session[f"{league_name}_config"])
+
 
 def load_users_and_rosters_from_sheet(league_id):
     service = get_service()
@@ -226,9 +251,37 @@ def load_users_and_rosters_from_sheet(league_id):
 
     return users, rosters
 
+def get_cached_salary_df():
+    from pandas import read_json
+    from io import StringIO
+    if "SALARY_DF" in session:
+        return read_json(StringIO(session["SALARY_DF"]))
+    return load_flattened_salary_data()
+
+@cache.memoize(timeout=3600)
+def get_sleeper_players():
+    url = "https://api.sleeper.app/v1/players/nfl"
+    resp = requests.get(url)
+    if resp.status_code == 200:
+        return resp.json()
+    else:
+        raise Exception("Failed to fetch Sleeper player data.")
+
+@cache.memoize(timeout=3600)
+def load_flattened_salary_data():
+    df = pd.read_csv("SalaryDB.csv", dtype={"player_id": str})
+    df["player_id"] = df["player_id"].astype(str).str.strip()
+    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+    return df
+
+
 
 # ======================== Global Constants ========================
 SLEEPER_CACHE = {}
+
+LEAGUES_CACHE = None
+USER_ROSTER_CACHE = {}
+
 
 SALARY_DB_CACHE = None
 
@@ -415,56 +468,42 @@ def login():
         session["league_name"] = name
         session["is_admin"] = (admin_pw == league.get("admin_password"))
 
-        # ✅ Cache Sleeper players
-        try:
-            if not SLEEPER_CACHE.get("players"):
-                resp = requests.get("https://api.sleeper.app/v1/players/nfl")
-                if resp.status_code == 200:
-                    SLEEPER_CACHE["players"] = resp.json()
-                else:
-                    raise Exception("Failed to fetch Sleeper player data.")
-        except Exception as e:
-            flash(f"Error caching Sleeper players: {str(e)}", "error")
-            return redirect(url_for("login"))
-
-        # ✅ Check league_id logic
         league_id = league.get("league_id")
         if not league_id:
             if session["is_admin"]:
-                flash(
-                    "⚠️ This league does not have a League ID configured yet. Please update it.",
-                    "warning")
+                flash("⚠️ League ID not set. Configure it on the Admin page.", "warning")
                 return redirect(url_for("admin_page", league_name=name))
             else:
-                flash(
-                    "❌ This league is not set up yet. Please contact the Commissioner.",
-                    "error")
+                flash("❌ League not yet configured. Contact the Commissioner.", "error")
                 return redirect(url_for("login"))
 
-        # ✅ Fetch league data from Sleeper
+        # Pre-cache required data
+        try:
+            get_sleeper_players()
+            load_flattened_salary_data()
+        except Exception as e:
+            flash(f"⚠️ Error caching required data: {str(e)}", "error")
+            return redirect(url_for("login"))
+
         try:
             users = get_league_users(league_id)
             rosters = get_league_rosters(league_id)
             save_league_session_to_sheet(league_id, users, rosters)
         except Exception as e:
             if session["is_admin"]:
-                flash(
-                    f"⚠️ League ID appears invalid or inaccessible: {str(e)}",
-                    "warning")
+                flash(f"⚠️ League ID appears invalid: {str(e)}", "warning")
                 return redirect(url_for("admin_page", league_name=name))
             else:
-                flash(
-                    "❌ There was an issue accessing this league. Please contact the Commissioner.",
-                    "error")
+                flash("❌ Problem accessing league. Contact Commissioner.", "error")
                 return redirect(url_for("login"))
 
-        # ✅ Redirect after login
         if session["is_admin"]:
             return redirect(url_for("admin_page", league_name=name))
         else:
-            return redirect(url_for("league_totals", league_name=name,))
+            return redirect(url_for("league_totals", league_name=name))
 
     return render_template("login.html")
+
 
 
 ## --- Logout ---
@@ -550,7 +589,10 @@ def league_summary(league_name):
 
         team_data = []
         # Fetch display names
-        users, rosters = load_users_and_rosters_from_sheet(league_id)
+        users, rosters, config = load_league_data(league_name)
+        if not config:
+            return "❌ League not found or config missing"
+
 
         # Create lookup: user_id → display_name
         user_lookup = {}
@@ -727,7 +769,10 @@ def league_totals(league_name):
         prev_year = current_year - 1
 
         # AFTER
-        users, rosters = load_users_and_rosters_from_sheet(league_id)
+        users, rosters, config = load_league_data(league_name)
+        if not config:
+            return "❌ League not found or config missing"
+
         user_lookup = {}
         team_lookup = {}
 
@@ -818,7 +863,10 @@ def team_detail(league_name, user_id):
         prev_year = current_year - 1
         next_year = current_year + 1
 
-        users, rosters = load_users_and_rosters_from_sheet(league_id)
+        users, rosters, config = load_league_data(league_name)
+        if not config:
+            return "❌ League not found or config missing"
+
 
         sleeper_data = SLEEPER_CACHE.get("players", {})
 
@@ -949,7 +997,7 @@ def team_detail(league_name, user_id):
 
 
 ## --- Cap Simulator ---
-@app.route("/league/<league_name>/team/<user_id>/simulate")
+@app.route("/league/<league_name>/team/<user_id>/simulate", methods=["GET", "POST"])
 def cap_simulator(league_name, user_id):
     leagues = load_all_leagues()
     config = leagues.get(league_name)
@@ -961,40 +1009,36 @@ def cap_simulator(league_name, user_id):
         return "❌ League ID not set."
 
     try:
-        # Load and cache salary DB
         df = load_flattened_salary_data()
-        df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
-
         current_year = datetime.now().year
         prev_year = current_year - 1
-        next_year = current_year + 1
 
         # Build salary lookup dict
         salary_lookup = {}
         for _, row in df.iterrows():
             pid = str(row["player_id"]).strip()
-            if pid not in salary_lookup:
-                salary_lookup[pid] = []
-            salary_lookup[pid].append(row)
+            salary_lookup.setdefault(pid, []).append(row)
 
-        # Load league data
-        users, rosters = load_users_and_rosters_from_sheet(league_id)
+        users, rosters, config = load_league_data(league_name)
         roster = next((r for r in rosters if r.get("owner_id") == user_id), {})
-        all_ids = list(
-            set(
-                str(pid) for pid in (roster.get("starters", []) +
-                                     roster.get("players", []))
-                if str(pid) != "0"))
+        all_ids = list(set(str(pid) for pid in roster.get("players", []) + roster.get("starters", []) if str(pid) != "0"))
 
-        sleeper_data = SLEEPER_CACHE.get("players", {})
+        if request.method == "POST":
+            if request.form.get("action") == "add":
+                pid = request.form.get("player_id")
+                if pid and pid not in all_ids:
+                    all_ids.append(pid)
+
+        sleeper_data = get_sleeper_players()
         sleeper_lookup = {
             str(p.get("player_id")): {
+                "player_id": str(p.get("player_id")),
                 "full_name": p.get("full_name", "Unknown"),
                 "position": p.get("position", "N/A"),
-                "team": p.get("team") or "No Team",
+                "team": p.get("team", "No Team") or "No Team",
                 "age": p.get("age", "N/A")
             }
-            for p in sleeper_data.values() if p.get("player_id")
+            for p in sleeper_data.values() if p.get("player_id") and p.get("full_name")
         }
 
         # Build active player list
@@ -1002,86 +1046,46 @@ def cap_simulator(league_name, user_id):
         total_cap = 0
         for pid in all_ids:
             entries = salary_lookup.get(pid, [])
-            row = None
-
-            # Prioritize current year, fallback to previous
-            for r in entries:
-                if r["Year"] == current_year:
-                    row = r.to_dict()
-                    break
-            if not row:
-                for r in entries:
-                    if r["Year"] == prev_year:
-                        row = r.to_dict()
-                        break
+            row = next((r.to_dict() for r in entries if r["Year"] == current_year), None) or \
+                  next((r.to_dict() for r in entries if r["Year"] == prev_year), None)
 
             if row:
-                cap = row.get("Cap Hit", "0")
-                cap_num = float(
-                    str(cap).replace("$", "").replace(",", "").replace(
-                        "-", "0") or 0)
+                cap_str = row.get("Cap Hit", "0")
+                cap_num = float(str(cap_str).replace("$", "").replace(",", "").replace("-", "0") or 0)
                 team = row.get("Team", "Free Agent")
             else:
-                cap = "*5,000,000"
+                cap_str = "*5,000,000"
                 cap_num = 5000000
                 team = "Free Agent"
 
-            total_cap += cap_num
             player = sleeper_lookup.get(pid, {})
             players.append({
-                "Player":
-                player.get("full_name",
-                           row.get("Player", "Unknown") if row else "Unknown"),
-                "Team":
-                team,
-                "Cap_Hit":
-                cap,
-                "Pos":
-                player.get("position",
-                           row.get("Pos", "N/A") if row else "N/A"),
-                "Age":
-                player.get("age",
-                           row.get("Age", "N/A") if row else "N/A"),
-                "player_id":
-                pid,
-                "cap_num":
-                cap_num
+                "Player": player.get("full_name", row.get("Player", "Unknown") if row else "Unknown"),
+                "Team": team,
+                "Cap_Hit": cap_str,
+                "Pos": player.get("position", row.get("Pos", "N/A") if row else "N/A"),
+                "Age": player.get("age", row.get("Age", "N/A") if row else "N/A"),
+                "player_id": pid,
+                "cap_num": cap_num
             })
+            total_cap += cap_num
 
-        display_name = next((u.get("display_name", f"User {user_id}")
-                             for u in users if u.get("user_id") == user_id),
-                            f"User {user_id}")
-
-        # Build lookup for all Sleeper players (for adding new ones)
+        # Augment all Sleeper players with cap info for search UI
         for pid, info in sleeper_lookup.items():
             entries = salary_lookup.get(pid, [])
-            row = None
-
-            for r in entries:
-                if r["Year"] == current_year:
-                    row = r.to_dict()
-                    break
-            if not row:
-                for r in entries:
-                    if r["Year"] == prev_year:
-                        row = r.to_dict()
-                        break
+            row = next((r.to_dict() for r in entries if r["Year"] == current_year), None) or \
+                  next((r.to_dict() for r in entries if r["Year"] == prev_year), None)
 
             if row:
-                team = row.get("Team", "").strip().lower()
-                if team != "free agent":
-                    cap_str = row.get("Cap Hit", "0")
-                    cap_num = float(
-                        str(cap_str).replace("$", "").replace(",", "").replace(
-                            "-", "0") or 0)
-                    info["cap_num"] = cap_num
-                    info["cap_str"] = row.get("Cap Hit")
-                else:
-                    info["cap_num"] = 5000000
-                    info["cap_str"] = "*5,000,000"
+                cap_str = row.get("Cap Hit", "0")
+                cap_num = float(str(cap_str).replace("$", "").replace(",", "").replace("-", "0") or 0)
+                info["cap_num"] = cap_num
+                info["cap_str"] = cap_str
             else:
                 info["cap_num"] = 5000000
                 info["cap_str"] = "*5,000,000"
+
+        display_name = next((u.get("display_name") for u in users if u.get("user_id") == user_id), f"User {user_id}")
 
         return render_template("cap_simulator.html",
                                league_name=league_name,
@@ -1096,6 +1100,9 @@ def cap_simulator(league_name, user_id):
 
     except Exception as e:
         return f"❌ Error: {str(e)}"
+
+
+
 
 ## --- Draft Room Page ---
 @app.route('/draft_room/<league>/<draft_id>', methods=['GET', 'POST'])
@@ -1480,7 +1487,10 @@ def admin_page(league_name):
         df["player_id"] = df["player_id"].astype(str).str.strip()
 
         league_id = config.get("league_id")
-        _, rosters = load_users_and_rosters_from_sheet(league_id)
+        _, rosters, config = load_league_data(league_name)
+        if not config:
+            return "❌ League not found or config missing"
+
 
         all_ids = set()
         for roster in rosters:
@@ -1520,7 +1530,9 @@ def unmatched_players(league_name):
         matched_ids = set(df["player_id"])
 
         league_id = config.get("league_id")
-        _, rosters = load_users_and_rosters_from_sheet(league_id)
+        _, rosters, config = load_league_data(league_name)
+        if not config:
+            return "❌ League not found or config missing"
 
         all_ids = set()
         for r in rosters:
@@ -1587,7 +1599,9 @@ def theme_selector(league_name):
     # Load users from league
     users = []
     try:
-        raw_users, _ = load_users_and_rosters_from_sheet(league_id)
+        raw_users, _, config = load_league_data(league_name)
+        if not config:
+            return "❌ League not found or config missing"
         users = []
         for u in raw_users:
             display_name = u.get("display_name", f"User {u.get('user_id')}")
@@ -1629,12 +1643,28 @@ def theme_selector(league_name):
                            assigned_users=assigned_users)
 
 # ======================== Admin Draft Refresh ========================
-@app.route('/refresh_draft/<draft_id>')
-def refresh_draft(draft_id):
-    if not session.get('is_admin', False):
-        return 'Unauthorized', 403
-    session.pop('added_players', None)  # Reset only admin-added extras
-    return redirect(url_for('draft_room', league='your_league', draft_id=draft_id))
+@app.route("/admin/<league_name>/refresh_cache")
+def refresh_cache(league_name):
+    global LEAGUES_CACHE, USER_ROSTER_CACHE
+
+    LEAGUES_CACHE = None
+
+    leagues = load_all_leagues()
+    if league_name not in leagues:
+        flash(f"League '{league_name}' not found.", "danger")
+        return redirect(url_for("admin_home", league_name=league_name))
+
+    league_id = leagues[league_name]["league_id"]
+    USER_ROSTER_CACHE.pop(league_id, None)  # important: pop using league_id
+
+    try:
+        load_league_data(league_name)
+        flash("League cache refreshed successfully.", "info")
+    except Exception as e:
+        flash(f"Error refreshing cache: {e}", "danger")
+
+    return redirect(url_for("admin_page", league_name=league_name))
+
 
 
 

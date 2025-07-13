@@ -22,7 +22,7 @@ const runCommand = (command) => {
 const automateGit = async () => {
   try {
     await runCommand('git add .');
-    await runCommand('git commit -m "Draft V1"');
+    await runCommand('git commit -m "Optimization"');
     await runCommand('git push origin main');
     console.log('Git operations completed successfully.');
   } catch (error) {
