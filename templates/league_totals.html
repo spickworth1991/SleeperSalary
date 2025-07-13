@@ -23,6 +23,12 @@
             {% endfor %}
           </table>
           <a href="{{ url_for('logout') }}">Logout</a>
+          {% if config.get("league_id") and (is_admin or config.get("draft_room_public")) %}
+            <div style="margin-top: 20px;">
+              <a href="{{ url_for('draft_room_home', league=league_name) }}" class="button-link">🚀 Go to Draft Room</a>
+            </div>
+          {% endif %}
+
           {% if session.get('is_admin') and session.get('league_name') %}
             <div style="margin-top: 20px;">
               <a href="{{ url_for('admin_page', league_name=session['league_name']) }}">⚙️ Admin Settings</a>

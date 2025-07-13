@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Draft Room – {{ team_name }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="/static/style.css" rel="stylesheet">
+</head>
+    <title>Draft Room Summary</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .team-table { border-collapse: collapse; width: 80%; margin: 0 auto; }
+        .team-table th, .team-table td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        .team-table th { background-color: #222b62; }
+        h1 { text-align: center; }
+        a.button-link { text-decoration: none; color: white; background: #007bff; padding: 6px 12px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>Draft Room Summary — {{ league }}</h1>
+
+    <table class="team-table">
+        <thead>
+            <tr>
+                <th>Team Owner</th>
+                <th>Player Count</th>
+                <th>Total Cap</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for team in teams %}
+            <tr>
+                <td>{{ team.owner }}</td>
+                <td>{{ team.player_count }}</td>
+                <td>{{ team.total_cap }}</td>
+                <td><a class="button-link" href="{{ url_for('draft_team_view', league=league, draft_id=team.draft_id, roster_id=team.roster_id) }}">View</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

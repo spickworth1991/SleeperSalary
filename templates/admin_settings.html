@@ -18,11 +18,23 @@
       {% endif %}
     {% endwith %}
 
-    <form method="POST">
-        <label for="league_id">Sleeper League ID:</label>
-        <input type="text" name="league_id" value="{{ config.league_id }}" placeholder="e.g. 123456789012345678" required>
-        <button type="submit">Save</button>
+    <form method="post">
+        <div>
+            <label>League ID:</label>
+            <input type="text" name="league_id" value="{{ config.get('league_id', '') }}">
+        </div>
+        <div>
+            <label>
+            <input type="checkbox" name="draft_room_public" {% if config.get('draft_room_public') %}checked{% endif %}>
+            Make Draft Room public to non-admins
+            </label>
+        </div>
+
+        <div>
+            <button type="submit">💾 Save Settings</button>
+        </div>
     </form>
+
 
     <div class="section">
         <h3>Current Configuration</h3>
@@ -34,6 +46,12 @@
         |<a href="{{ url_for('league_summary', league_name=league_name) }}">← To League Summary ---</a> |
         <a href="{{ url_for('league_totals', league_name=league_name) }}">--- To League Totals →</a> |
         <a href="{{ url_for('logout') }}">Logout</a> |
+        {% if config.get("league_id") %}
+        <div style="margin-top: 20px;">
+            <a href="{{ url_for('draft_room_home', league=league_name) }}" class="button-link">🚀 Go to Draft Room</a>
+        </div> |
+        {% endif %}
+
     </div>
 
     <hr>

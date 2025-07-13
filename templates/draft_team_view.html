@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Draft Team View</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="/static/style.css" rel="stylesheet">
+</head>
+    <style>
+        table { width: 80%; margin: 20px auto; border-collapse: collapse; }
+        th, td { padding: 10px; border: 1px solid #ccc; text-align: left; }
+        th { background: #1f2469; }
+        .remove-btn { background: none; border: none; color: red; font-weight: bold; cursor: pointer; }
+        .section-header { margin: 30px auto 10px auto; width: 80%; font-size: 1.2em; }
+        form { text-align: center; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1 style="text-align:center;">{{ team_name }} — Total Cap: ${{ '{:,.0f}'.format(active_total + added_total) }}</h1>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-container">
+            {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="section-header">🟩 Drafted Players</div>
+    <table>
+        <tr><th>Player</th><th>Cap Hit</th></tr>
+        {% for p in active_players %}
+        <tr>
+            <td>{{ p.name }}</td>
+            <td>${{ '{:,.0f}'.format(p.cap) }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <div class="section-header">➕ Add Players to test cap Situations</div>
+
+        <form id="addPlayerForm" method="post" style="text-align: center; margin-top: 20px;">
+        <input type="hidden" name="action" value="add">
+        <input type="hidden" name="player_id" id="player_id_field">
+        <input type="text" id="playerSearch" placeholder="Type a player name..." autocomplete="off">
+        </form>
+        <div id="suggestions" class="search-suggestions" style="text-align: center; margin-top: 10px;"></div>
+
+        <table>
+        <tr><th>Player</th><th>Cap Hit</th><th>Remove</th></tr>
+        {% for p in added_players %}
+        <tr>
+            <td>{{ p.name }}</td>
+            <td>${{ '{:,.0f}'.format(p.cap) }}</td>
+            <td>
+            <form method="post" style="display:inline;">
+                <input type="hidden" name="action" value="remove">
+                <input type="hidden" name="player_id" value="{{ p.id }}">
+                <button type="submit" class="remove-btn">❌</button>
+            </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </table>
+        <style>
+        .search-suggestions ul {
+        list-style: none;
+        padding: 0;
+        margin: 10px auto;
+        width: 60%;
+        border: 1px solid #ccc;
+        background: #f9f9f9;
+        }
+        .search-suggestions li button {
+        display: block;
+        width: 100%;
+        padding: 8px;
+        border: none;
+        text-align: left;
+        background: #fff;
+        border-bottom: 1px solid #eee;
+        cursor: pointer;
+        }
+        .search-suggestions li button:hover {
+        background: #eef;
+        }
+        </style>
+
+    <p style="text-align:center; margin-top:30px;">
+        <a href="{{ url_for('draft_room_home', league=league) }}">⬅ Back to Draft Room</a>
+    </p>
+    <script>
+        const playerDB = {{ sleeper_data | tojson }};
+        const draftedIDs = new Set({{ active_ids | tojson }});
+        const playerMap = {};
+
+        // Build name-based lookup for fallback
+        for (const [id, info] of Object.entries(playerDB)) {
+            const name = info.name;
+            if (!name) continue;
+            if (!playerMap[name.toLowerCase()]) playerMap[name.toLowerCase()] = [];
+            const cap = info.cap_num || 5000000;
+            const cap_str = info.cap_str || "$5,000,000";
+            playerMap[name.toLowerCase()].push({ id, ...info, cap, cap_str });
+        }
+
+        const playerSearch = document.getElementById("playerSearch");
+        const suggestions = document.getElementById("suggestions");
+
+        playerSearch.addEventListener("input", () => {
+            const query = playerSearch.value.trim().toLowerCase();
+            suggestions.innerHTML = "";
+            if (!query) return;
+
+            const matches = Object.entries(playerMap).filter(([name, players]) =>
+            name.includes(query)
+            ).flatMap(([_, players]) => players.filter(p => !draftedIDs.has(p.id)));
+
+            if (matches.length === 0) {
+            suggestions.innerHTML = `<p>No available players found.</p>`;
+            } else {
+            const list = document.createElement("ul");
+            matches.forEach(p => {
+                const li = document.createElement("li");
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.innerHTML = `
+                <strong>${p.name}</strong> – ${p.team || "No Team"}<br>
+                <small>${p.position}, Age ${p.age}</small><br>
+                <small>${p.cap_str}</small>
+                `;
+                btn.onclick = () => {
+                document.getElementById("player_id_field").value = p.id;
+                document.getElementById("addPlayerForm").submit();
+                };
+                li.appendChild(btn);
+                list.appendChild(li);
+            });
+            suggestions.appendChild(list);
+            }
+        });
+    </script>
+
+</body>
+</html>

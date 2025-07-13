@@ -7,6 +7,8 @@ import requests
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from difflib import get_close_matches
+
 
 # ======================== Flask App Setup ========================
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -64,11 +66,11 @@ def load_all_leagues():
     service = get_service()
     sheet = service.spreadsheets()
     result = sheet.values().get(spreadsheetId=SPREADSHEET_ID,
-                                range="config!A2:E").execute()
+                                range="config!A2:F").execute()
     values = result.get('values', [])
     leagues = {}
     for row in values:
-        if len(row) < 4:
+        if len(row) < 5:
             continue
         league_name = row[0]
         leagues[league_name] = {
@@ -82,6 +84,11 @@ def load_all_leagues():
                 leagues[league_name]["themes"] = json.loads(row[4])
             except:
                 leagues[league_name]["themes"] = {}
+        if len(row) >= 6:
+            leagues[league_name]["draft_room_public"] = row[5].strip().lower() == "true"
+        else:
+            leagues[league_name]["draft_room_public"] = False
+
     return leagues
 
 
@@ -117,7 +124,8 @@ def update_league_config(league_name, field, value):
         "password": "B",
         "admin_password": "C",
         "league_id": "D",
-        "themes": "E"
+        "themes": "E",
+        "draft_room_public": "F"
     }
     if field == "themes":
         value = json.dumps(value)
@@ -454,7 +462,7 @@ def login():
         if session["is_admin"]:
             return redirect(url_for("admin_page", league_name=name))
         else:
-            return redirect(url_for("league_totals", league_name=name))
+            return redirect(url_for("league_totals", league_name=name,))
 
     return render_template("login.html")
 
@@ -782,7 +790,9 @@ def league_totals(league_name):
 
         return render_template("league_totals.html",
                                league_name=league_name,
-                               teams=team_caps)
+                               teams=team_caps,
+                               is_admin=session.get("is_admin", False),
+                               config=config)
 
     except Exception as e:
         return f"❌ Error: {str(e)}"
@@ -930,7 +940,9 @@ def team_detail(league_name, user_id):
             user_id=user_id,
             total_cap=f"${total_cap:,.0f}",
             theme_team=themed_team_abbr,
-            theme_info=theme_info)
+            theme_info=theme_info,
+            is_admin=session.get("is_admin", False),
+            config=config)
 
     except Exception as e:
         return f"❌ Error: {str(e)}"
@@ -1078,10 +1090,367 @@ def cap_simulator(league_name, user_id):
                                total_cap=f"${total_cap:,.0f}",
                                player_ids=list(set(all_ids)),
                                sleeper_data=sleeper_lookup,
-                               user_id=user_id)
+                               user_id=user_id,
+                               is_admin=session.get("is_admin", False),
+                               config=config)
 
     except Exception as e:
         return f"❌ Error: {str(e)}"
+
+## --- Draft Room Page ---
+@app.route('/draft_room/<league>/<draft_id>', methods=['GET', 'POST'])
+def draft_room(league, draft_id):
+    leagues = load_all_leagues()
+    config = leagues.get(league)
+    is_admin = session.get('is_admin', False)
+
+    # Load salary and Sleeper data
+    df = load_flattened_salary_data()
+    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+    current_year = datetime.now().year
+    prev_year = current_year - 1
+
+    sleeper_data = SLEEPER_CACHE.get("players", {})
+    sleeper_lookup = {
+        str(p.get("player_id")): {
+            "name": p.get("full_name", "Unknown"),
+            "position": p.get("position", "N/A"),
+            "team": p.get("team") or "No Team",
+            "age": p.get("age", "N/A")
+        }
+        for p in sleeper_data.values() if p.get("player_id")
+    }
+
+    # Handle add-player form
+    if request.method == 'POST':
+        roster_id = request.form.get('roster_id')
+        player_name = request.form.get('add_player_name', '').strip().lower()
+
+        matched_ids = []
+        for pid, data in sleeper_lookup.items():
+            if player_name in data.get("name", "").lower():
+                matched_ids.append(pid)
+
+        if matched_ids:
+            pid = matched_ids[0]  # Take best match
+            added_players = session.get('added_players', {})
+            added_players.setdefault(roster_id, [])
+            if pid not in added_players[roster_id]:
+                added_players[roster_id].append(pid)
+                session['added_players'] = added_players
+        return redirect(request.url)
+
+    # Fetch draft picks
+    picks = requests.get(f'https://api.sleeper.app/v1/draft/{draft_id}/picks').json()
+
+    # Build rosters by draft pick
+    rosters = {}
+    for pick in picks:
+        rid = pick.get('roster_id')
+        pid = pick.get('player_id')
+        if rid is not None and pid is not None:
+            rosters.setdefault(str(rid), []).append(str(pid))
+
+    # Merge manually added players
+    added_players = session.get('added_players', {})
+    for rid, extras in added_players.items():
+        rosters.setdefault(str(rid), [])
+        for pid in extras:
+            if pid not in rosters[rid]:
+                rosters[rid].append(pid)
+
+    # Build player display data
+    all_rosters = []
+    for rid, pids in rosters.items():
+        players = []
+        total_cap = 0
+
+        for pid in pids:
+            matched = df[df["player_id"] == pid]
+            curr = matched[matched["Year"] == current_year]
+            if curr.empty:
+                curr = matched[matched["Year"] == prev_year]
+
+            if not curr.empty:
+                row = curr.iloc[0].to_dict()
+                cap_str = row.get("Cap Hit", "0")
+                cap_num = float(str(cap_str).replace("$", "").replace(",", "").replace("-", "0") or 0)
+                name = row.get("Player", "Unknown")
+                note = ""
+            else:
+                cap_num = 5000000
+                name = sleeper_lookup.get(pid, {}).get("name", "Unknown")
+                note = "*"
+
+            total_cap += cap_num
+            players.append({
+                "id": pid,
+                "name": name,
+                "cap": cap_num,
+                "note": note
+            })
+
+        all_rosters.append({
+            "roster_id": rid,
+            "players": sorted(players, key=lambda x: -x["cap"]),
+            "total_cap": total_cap
+        })
+
+    return render_template("draft_room.html",
+                           league=league,
+                           draft_id=draft_id,\
+                           rosters=all_rosters,
+                           is_admin=session.get("is_admin", False),
+                           config=config)
+
+@app.route('/draft_room_home/<league>')
+def draft_room_home(league):
+    leagues = load_all_leagues()
+    config = leagues.get(league)
+    if not config:
+        return "❌ League not found."
+
+    draft_is_public = config.get("draft_room_public", False)
+    is_admin = session.get("is_admin", False)
+
+    if not (is_admin or draft_is_public):
+        flash("🔒 The Draft Room is currently hidden from non-admins.", "error")
+        return redirect(url_for("league_summary", league_name=league))
+
+
+    league_id = config.get("league_id")
+    if not league_id:
+        return "❌ League ID not configured."
+
+    # Get draft_id dynamically
+    draft_resp = requests.get(f"https://api.sleeper.app/v1/league/{league_id}/drafts")
+    if draft_resp.status_code != 200:
+        return "❌ Could not retrieve draft data."
+
+    drafts = draft_resp.json()
+    if not drafts:
+        return "❌ No drafts found for this league."
+
+    draft_id = drafts[0].get("draft_id")
+
+    # Load draft picks
+    picks = requests.get(f'https://api.sleeper.app/v1/draft/{draft_id}/picks').json()
+    user_data = requests.get(f'https://api.sleeper.app/v1/league/{league_id}/users').json()
+
+    user_lookup = {
+        str(u["user_id"]): u.get("metadata", {}).get("team_name") or u.get("display_name", f"User {u['user_id']}")
+        for u in user_data
+    }
+
+    df = load_flattened_salary_data()
+    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+    current_year = datetime.now().year
+    prev_year = current_year - 1
+
+    rosters = {}
+    for pick in picks:
+        rid = str(pick.get("roster_id"))
+        pid = str(pick.get("player_id"))
+        picked_by = str(pick.get("picked_by"))
+        if rid and pid:
+            rosters.setdefault(rid, {"players": [], "owner": user_lookup.get(picked_by, f"Roster {rid}")})
+            rosters[rid]["players"].append(pid)
+
+    added_players = session.get("added_players", {})
+    for rid, extras in added_players.items():
+        rosters.setdefault(rid, {"players": [], "owner": f"Roster {rid}"})
+        for pid in extras:
+            if pid not in rosters[rid]["players"]:
+                rosters[rid]["players"].append(pid)
+
+    teams = []
+    for rid, data in rosters.items():
+        total_cap = 0
+        for pid in data["players"]:
+            matched = df[df["player_id"] == pid]
+            curr = matched[matched["Year"] == current_year]
+            if curr.empty:
+                curr = matched[matched["Year"] == prev_year]
+
+            if not curr.empty:
+                cap_str = curr.iloc[0].get("Cap Hit", "0")
+                cap_num = float(str(cap_str).replace("$", "").replace(",", "").replace("-", "0") or 0)
+            else:
+                cap_num = 5000000
+            total_cap += cap_num
+
+        teams.append({
+            "roster_id": rid,
+            "owner": data["owner"],
+            "player_count": len(data["players"]),
+            "total_cap": f"${total_cap:,.0f}",
+            "draft_id": draft_id
+        })
+
+    teams = sorted(teams, key=lambda x: float(x["total_cap"].replace("$", "").replace(",", "")), reverse=True)
+
+    return render_template("draft_room_home.html",
+                           league=league,
+                           teams=teams,
+                           is_admin=session.get("is_admin", False),
+                           config=config)
+
+@app.route("/draft_room/<league>/<draft_id>/team/<roster_id>", methods=["GET", "POST"])
+def draft_team_view(league, draft_id, roster_id):
+    if not SLEEPER_CACHE.get("players"):
+        try:
+            resp = requests.get("https://api.sleeper.app/v1/players/nfl")
+            if resp.status_code == 200:
+                SLEEPER_CACHE["players"] = resp.json()
+            else:
+                flash("⚠️ Failed to load Sleeper players.", "warning")
+                return redirect(url_for("login"))
+        except Exception as e:
+            flash(f"⚠️ Sleeper API error: {e}", "warning")
+            return redirect(url_for("login"))
+    is_admin = session.get("is_admin", False)
+    leagues = load_all_leagues()
+    config = leagues.get(league)
+    league_id = config.get("league_id")
+
+    user_data = requests.get(f"https://api.sleeper.app/v1/league/{league_id}/users").json()
+    user_lookup = {
+        str(u["user_id"]): u.get("metadata", {}).get("team_name") or u.get("display_name", f"User {u['user_id']}")
+        for u in user_data
+    }
+
+    df = load_flattened_salary_data()
+    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+    current_year = datetime.now().year
+    prev_year = current_year - 1
+
+    sleeper_data = SLEEPER_CACHE.get("players", {})
+    sleeper_lookup = {}
+    for p in sleeper_data.values():
+        pid = str(p.get("player_id"))
+        if not pid:
+            continue
+        name = p.get("full_name", "Unknown")
+        pos = p.get("position", "N/A")
+        team = p.get("team") or "No Team"
+        age = p.get("age", "N/A")
+
+        matched = df[df["player_id"] == pid]
+        curr = matched[matched["Year"] == current_year]
+        if curr.empty:
+            curr = matched[matched["Year"] == prev_year]
+
+        if not curr.empty:
+            row = curr.iloc[0].to_dict()
+            cap = row.get("Cap Hit", "$5,000,000")
+            cap_str = cap
+            cap_num = float(str(cap).replace("$", "").replace(",", "").replace("-", "0") or 0)
+        else:
+            cap_num = 5000000
+            cap_str = "$5,000,000"
+
+        sleeper_lookup[pid] = {
+            "name": name,
+            "position": pos,
+            "team": team,
+            "age": age,
+            "cap_num": cap_num,
+            "cap_str": cap_str
+        }
+
+
+    picks = requests.get(f"https://api.sleeper.app/v1/draft/{draft_id}/picks").json()
+    # 🟩 Picks for this team (used for displaying active roster)
+    team_active_ids = [str(p["player_id"]) for p in picks if str(p["roster_id"]) == roster_id]
+
+    # 🧠 All drafted player IDs → team name mapping
+    all_drafted_ids = []
+    drafted_by_map = {}
+    for p in picks:
+        pid = str(p["player_id"])
+        picked_by = str(p["picked_by"])
+        all_drafted_ids.append(pid)
+        drafted_by_map[pid] = user_lookup.get(picked_by, f"User {picked_by}")
+
+
+
+    added_players = session.get("added_players", {})
+    custom_ids = added_players.get(roster_id, [])
+
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "remove":
+            pid = request.form.get("player_id")
+            if roster_id in added_players and pid in added_players[roster_id]:
+                added_players[roster_id].remove(pid)
+                session["added_players"] = added_players
+                flash("❌ Player removed.", "success")
+        elif action == "add":
+            pid = request.form.get("player_id", "").strip()
+            name_map = {pid: info["name"] for pid, info in sleeper_lookup.items()}
+
+            if pid:
+                if pid in all_drafted_ids:
+                    drafted_team = drafted_by_map.get(pid, "another team")
+                    flash(f"⚠️ {name_map.get(pid)} is already drafted on {drafted_team}.", "warning")
+                else:
+                    added_players.setdefault(roster_id, [])
+                    if pid not in added_players[roster_id]:
+                        added_players[roster_id].append(pid)
+                        session["added_players"] = added_players
+                        flash(f"✅ Added player: {name_map.get(pid)}", "success")
+            else:
+                flash("⚠️ Invalid player selection.", "warning")
+
+
+        return redirect(request.url)  # ✅ Moved outside the if blocks
+
+
+
+
+    def build_player_rows(ids, is_custom=False):
+        rows = []
+        total = 0
+        for pid in ids:
+            matched = df[df["player_id"] == pid]
+            curr = matched[matched["Year"] == current_year]
+            if curr.empty:
+                curr = matched[matched["Year"] == prev_year]
+
+            if not curr.empty:
+                row = curr.iloc[0].to_dict()
+                cap = row.get("Cap Hit", "0")
+                cap_num = float(str(cap).replace("$", "").replace(",", "").replace("-", "0") or 0)
+                name = row.get("Player", "Unknown")
+            else:
+                cap_num = 5000000
+                name = sleeper_lookup.get(pid, {}).get("name", "Unknown")
+
+            total += cap_num
+            rows.append({
+                "id": pid,
+                "name": name,
+                "cap": cap_num
+            })
+        return sorted(rows, key=lambda r: -r["cap"]), total
+
+    active_players, active_total = build_player_rows(team_active_ids)
+    added_players_table, added_total = build_player_rows(custom_ids, is_custom=True)
+    team_name = f"{user_lookup.get(roster_id, f'Roster {roster_id}')}"
+    return render_template("draft_team_view.html",
+        league=league,
+        draft_id=draft_id,
+        roster_id=roster_id,
+        team_name=team_name,
+        active_players=active_players,
+        added_players=added_players_table,
+        active_total=active_total,
+        added_total=added_total,
+        is_admin=is_admin,
+        sleeper_data=sleeper_lookup,
+        active_ids=all_drafted_ids
+    )
+
 
 
 ## --- Admin Settings Page ---
@@ -1094,9 +1463,12 @@ def admin_page(league_name):
 
     if request.method == "POST":
         league_id = request.form.get("league_id", "").strip()
-        update_league_config(league_name, "themes", themes)
+        draft_room_public = request.form.get("draft_room_public") == "on"
 
-        flash("✅ League ID updated.", "success")
+        if league_id:
+            update_league_config(league_name, "league_id", league_id)
+        update_league_config(league_name, "draft_room_public", "TRUE" if draft_room_public else "FALSE")
+        flash("✅ League settings updated.", "success")
         return redirect(url_for("admin_page", league_name=league_name))
 
     config = leagues[league_name]
@@ -1126,7 +1498,9 @@ def admin_page(league_name):
     return render_template("admin_settings.html",
                            config=config,
                            league_name=league_name,
-                           unmatched_count=unmatched_count)
+                           unmatched_count=unmatched_count,
+                           is_admin=session.get("is_admin", False))
+
 
 
 ## --- Admin Unmatched Players ---
@@ -1253,6 +1627,15 @@ def theme_selector(league_name):
                            themes=themes,
                            nfl_teams=nfl_teams,
                            assigned_users=assigned_users)
+
+# ======================== Admin Draft Refresh ========================
+@app.route('/refresh_draft/<draft_id>')
+def refresh_draft(draft_id):
+    if not session.get('is_admin', False):
+        return 'Unauthorized', 403
+    session.pop('added_players', None)  # Reset only admin-added extras
+    return redirect(url_for('draft_room', league='your_league', draft_id=draft_id))
+
 
 
 # ======================== App Runner ========================
